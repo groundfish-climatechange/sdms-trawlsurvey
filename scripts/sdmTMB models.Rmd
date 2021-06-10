@@ -1,0 +1,212 @@
+---
+title: "Run sdmTMB"
+author: "Owen Liu"
+date: "6/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(here)
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+# Purpose
+
+Using sdmTMB, fit models for west coast groundfish based on hindcast ROMS oceanographic data.
+
+# Import Data
+
+## Trawl Data
+
+Trawl data, including a matching key to link to ROMS data. The hindcast ROMS data has values for all trawl survey locations for all times, but we just want the values matched to the actual trawl survey times/dates.
+
+```{r}
+trawl <- read_rds(here('data','nwfsc_trawl_data.rds')) %>% 
+  # convert date from character to date
+  mutate(date=as_date(date))
+# roms time refernce
+roms_time <- read_rds(here('data','roms_time_date_reference.rds'))
+trawl_locs <- read_rds(here::here('data','trawl','trawlID.rds')) %>% 
+  # add a dummy indicator of a "real" trawl survey location in time/space
+  mutate(date=as_datetime(trawl_time,origin="1900-01-01")) %>%
+  mutate(date=as_date(date)) %>%
+  mutate(realTrawl=1) %>% 
+  # join the roms_time reference
+  left_join(roms_time) %>% 
+  # select the variable we'll use to match
+  select(station,date,time,lon_trawl,lat_trawl,depth_trawl,realTrawl)
+
+trawl <- trawl %>% 
+  left_join(trawl_locs,by=c("date"="date","longitude_dd"="lon_trawl","latitude_dd"="lat_trawl","depth"="depth_trawl"))
+```
+
+Filter the trawl survey data to fit within the time frame for which we have ROMS hindcast data (1980-2010)
+
+```{r}
+trawl <- trawl %>%
+  filter(realTrawl==1) %>% 
+  select(-realTrawl) %>% 
+  # rename time to something more useful
+  rename(roms_hindcast_day=time)
+```
+
+## ROMS data
+
+Hindcast ROMS data matched to trawl survey locations and times
+
+```{r}
+roms <- read_rds(here::here('data','joined_30d_lagged_t_o.rds')) %>%
+  # join the trawl_locs and filter by actual trawl locations and times
+  left_join(trawl_locs) %>% 
+  filter(realTrawl==1) %>% 
+  select(-realTrawl) %>% 
+  # rename time to something more useful
+  rename(roms_hindcast_day=time)
+```
+
+
+Look at the form of these data
+
+```{r}
+glimpse(trawl)
+glimpse(roms)
+```
+
+For the ROMS data (for now), we are using modelled temperature and oxygen, lagged 30 days from each trawl survey location and time.
+
+```{r}
+roms_thin <- roms %>% 
+  dplyr::select(station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30)
+```
+
+# Join Trawl and ROMS
+
+Join the two datasets together, such that we have the appropriately-matched ROMS outputs
+
+```{r}
+trawl_roms <- trawl %>% left_join(roms,by = c("date", "station", "roms_hindcast_day")) %>% 
+  #clean up some columns
+  dplyr::select(date,station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30,species,cpue_kg_km2) %>% 
+  # drop any rows with NAs
+  drop_na()
+```
+
+
+# Prepare Data for sdmTMB
+
+Convert the trawl spatial data to UTM. 
+
+```{r}
+# convert to UTM
+trawl_roms_utm <- trawl_roms %>%
+  # convert to sf object
+  st_as_sf(coords=c('lon_trawl','lat_trawl'),crs=4326) %>%
+  # transform to UTM zone 10
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
+  # add new coords as vars
+  mutate(latitude = sf::st_coordinates(.)[,2],
+         longitude = sf::st_coordinates(.)[,1]) %>%
+  # convert back to normal df
+  st_set_geometry(NULL)
+```
+
+# Functions to Run a Model
+
+We'll write two functions, one to prepare a specific species for an sdmTMB model, and another to actually run an sdmTMB model with custom options
+
+## Prepare Species' Data
+
+This function selects a species' data from the trawl survey data, converts the spatial data to UTM, does a couple of filters for missing data, and then joins the ROMS hindcast data to it by time and location.
+
+```{r}
+prepare_species <- function(dat,spp){
+  dat_sub <- dat %>% 
+    filter(species==spp) %>% 
+    
+    # rescale depth, oxygen, and temp to be N(0,1)
+    mutate(across(c(depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30),~(scale(.) %>% as.vector()),.names="{.col}_norm")) %>% 
+    
+    # add a year indicator
+    mutate(year=lubridate::year(date))
+}
+```
+
+Try an example for sablefish
+
+```{r}
+sablefish_dat <- prepare_species(trawl_roms_utm,spp="sablefish")
+glimpse(sablefish_dat)
+```
+
+## sdmTMB Model Function
+
+Write a function that runs sdmTMB. It wil call the previous function to make the appropriate species data. For now, the environmental variable names are not generic (always `mean_temp_roms_30_norm` and `mean_oxygen_roms_30_norm`)
+
+```{r}
+run_sdmTMB <- function(dat,spp,nknots=250,use_depth=F,time_varying=F,spatial_only=T){
+  
+  # pull the species' data
+  modeldat <- prepare_species(dat,spp)
+  
+  # make spde
+  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
+                    n_knots = nknots)
+  
+  # model formula
+  formula <- paste0("cpue_kg_km2 ~ -1")
+  # if depth effect, add to model formla
+  if(use_depth) {
+    formula = paste0(formula, " + depth + I(depth^2)")
+  }
+  time_formula = "~ -1"
+  if(time_varying) {
+    time_formula = paste0(time_formula, " + ", 
+                          "mean_temp_roms_30_norm+mean_temp_roms_30_norm")
+    time_varying = as.formula(time_formula)
+    time = "year"
+  } else {
+    formula = paste0(formula, " + ", 
+                     "mean_temp_roms_30_norm+mean_temp_roms_30_norm")
+    time_varying = NULL
+    time = "year"
+  }
+  # formula = paste0(formula, " + as.factor(year)")
+  
+  # fit model
+  m <- try( sdmTMB( 
+    formula = as.formula(formula),
+    #formula = cpue_kg_km2 ~ as.factor(year) + depth,
+    time_varying = time_varying,
+    spde = spde,
+    time = time,
+    family = tweedie(link = "log"),
+    data = modeldat,
+    anisotropy = TRUE,
+    spatial_only = spatial_only,
+    quadratic_roots = TRUE
+  ), 
+  silent=TRUE)
+  
+  if(class(m)!="try-error") {
+    write_rds(m, path=here::here('model output',
+                                 paste0(spp,'.rds')))
+  }
+  print(paste("Model for",spp,"complete."))
+  
+  return(m)
+}
+```
+
+Try
+
+```{r}
+sable <- run_sdmTMB(trawl_roms_utm,spp="sablefish")
+```
+
+Crashing.
