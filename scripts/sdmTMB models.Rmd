@@ -259,7 +259,7 @@ sable4 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_v
 ## Output
 
 ```{r}
-sable_out <- tidy(sable)
+sable_out <- tidy(sable4)
 sable_out
 ```
 
