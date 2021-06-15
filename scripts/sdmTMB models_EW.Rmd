@@ -116,13 +116,6 @@ trawl_roms_utm <- trawl_roms %>%
   st_set_geometry(NULL)
 ```
 
-We can save this version of the data so we do not have to run the join every time.
-
-```{r}
-write_rds(trawl_roms_utm,here::here('data','trawl_roms_joined.rds'))
-```
-
-
 # Functions to Run a Model
 
 We'll write two functions, one to prepare a specific species for an sdmTMB model, and another to actually run an sdmTMB model with custom options
@@ -156,110 +149,61 @@ glimpse(sablefish_dat)
 Write a function that runs sdmTMB. It wil call the previous function to make the appropriate species data. For now, the environmental variable names are not generic (always `mean_temp_roms_30_norm` and `mean_oxygen_roms_30_norm`)
 
 ```{r}
-run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3){
-  # filter data for species
-  modeldat <- prepare_species(dat,spp=spp)
-  
+run_sdmTMB <- function(dat,spp,nknots=250,use_depth=F,time_varying=F,spatial_only=T){
   # make spde
+
   spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
                    cutoff = 20)
   
   # model formula
   formula <- paste0("cpue_kg_km2 ~ ")
-  
-  # make the environmental effects
-  enviro <- paste("mean_temp_roms_30_norm + 
-                  I(mean_temp_roms_30_norm^2) + 
-                  mean_oxygen_roms_30_norm + 
-                  I(mean_oxygen_roms_30_norm^2)")
-  # wiggly environmental relationships?
-  enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
-                                      "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
-                   enviro)
   # if depth effect, add to model formla
   if(use_depth) {
     formula = paste0(formula, " + depth + I(depth^2)")
   }
   time_formula = "~ -1"
   if(time_varying) {
-    time_formula = paste0(time_formula, " + ", enviro)
+    time_formula = paste0(time_formula, " + ", 
+                          "mean_temp_roms_30_norm")
     time_varying = as.formula(time_formula)
     time = "year"
   } else {
-    formula = paste0(formula, " + ", enviro)
+    formula = paste0(formula, " + ", 
+                     "mean_temp_roms_30_norm")
     time_varying = NULL
     time = "year"
   }
   # formula = paste0(formula, " + as.factor(year)")
   
   # fit model
-  if(!spatial_field){
-  m <- try(gam( 
-    formula = as.formula(formula),
-    family = tw(link = "log"),
-    data = modeldat
-  ), 
-  silent=TRUE)
-  } else{
   m <- try( sdmTMB( 
     formula = as.formula(formula),
+    #formula = cpue_kg_km2 ~ as.factor(year) + depth,
     time_varying = time_varying,
     spde = spde,
     time = time,
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = TRUE,
-    spatial_only = T,
+    spatial_only = spatial_only,
     quadratic_roots = TRUE
   ), 
-  silent=TRUE)    
-  }
+  silent=TRUE)
   
   if(class(m)!="try-error") {
-    write_rds(m, file=here::here('model output',
+    write_rds(m, path=here::here('model output',
                                  paste0(spp,'.rds')))
   }
-  if(class(m)=="try-error"){
-    print(paste("Error."))
-  }else{
-    print(paste("Model for",spp,"complete."))
-  }
+  print(paste("Model for",spp,"complete."))
+  
   return(m)
 }
 ```
 
-# Try it Out
-
-Try it out with different options
-
-No spatial field, linear environment
+Try
 
 ```{r}
-sable1 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=F,hab_spline=F,env_spline=F,spline_k=3)
+sable <- run_sdmTMB(trawl_roms_utm,spp="sablefish")
 ```
 
-No spatial field, wiggly environment
-
-```{r}
-sable2 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=F,hab_spline=F,env_spline=T,spline_k=3)
-```
-
-Spatial field, linear environment
-
-```{r}
-sable3 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3)
-```
-
-No spatial field, wiggly environment
-
-```{r}
-sable4 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=T,spline_k=3)
-```
-
-## Output
-
-```{r}
-sable_out <- tidy(sable)
-sable_out
-```
-
+Crashing.
