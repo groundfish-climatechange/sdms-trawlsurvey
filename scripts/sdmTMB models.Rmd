@@ -241,7 +241,7 @@ Spatial field, linear environment
 sable3 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3)
 ```
 
-No spatial field, wiggly environment
+Spatial field, wiggly environment
 
 ```{r}
 sable4 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=T,spline_k=3)
