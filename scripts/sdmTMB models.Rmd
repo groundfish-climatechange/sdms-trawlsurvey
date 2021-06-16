@@ -190,17 +190,8 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
     time_varying = NULL
     time = "year"
   }
-  # formula = paste0(formula, " + as.factor(year)")
   
   # fit model
-  if(!spatial_field){
-  m <- try(gam( 
-    formula = as.formula(formula),
-    family = tw(link = "log"),
-    data = modeldat
-  ), 
-  silent=TRUE)
-  } else{
   m <- try( sdmTMB( 
     formula = as.formula(formula),
     time_varying = time_varying,
@@ -210,10 +201,10 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
     data = modeldat,
     anisotropy = TRUE,
     spatial_only = T,
+    map_rf=ifelse(spatial_field,F,T),
     quadratic_roots = TRUE
   ), 
-  silent=TRUE)    
-  }
+  silent=TRUE)
   
   if(class(m)!="try-error") {
     write_rds(m, file=here::here('model output',
@@ -259,7 +250,9 @@ sable4 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_v
 ## Output
 
 ```{r}
-sable_out <- tidy(sable4)
-sable_out
+sable1
+sable2
+sable3
+sable4
 ```
 
