@@ -191,7 +191,8 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
     time = "year"
   }
   
-  # fit model
+  # fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned
+  # anisotropy off for now
   m <- try( sdmTMB( 
     formula = as.formula(formula),
     time_varying = time_varying,
@@ -199,10 +200,9 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
     time = time,
     family = tweedie(link = "log"),
     data = modeldat,
-    anisotropy = TRUE,
+    anisotropy = FALSE,
     spatial_only = T,
-    map_rf=ifelse(spatial_field,F,T),
-    quadratic_roots = TRUE
+    map_rf=ifelse(spatial_field,F,T)
   ), 
   silent=TRUE)
   
