@@ -70,12 +70,21 @@ roms <- read_rds(here::here('data','joined_30d_lagged_t_o.rds')) %>%
   rename(roms_hindcast_day=time)
 ```
 
+## Substrate Data
+
+Here is the substrate data that Blake Feist matched to individual trawl tows.
+
+```{r}
+substrate <- read_rds(here('data','substrate','substrate_by_trawlID.rds'))
+```
+
 
 Look at the form of these data
 
 ```{r}
 glimpse(trawl)
 glimpse(roms)
+glimpse(substrate)
 ```
 
 For the ROMS data (for now), we are using modelled temperature and oxygen, lagged 30 days from each trawl survey location and time.
@@ -85,6 +94,8 @@ roms_thin <- roms %>%
   dplyr::select(station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30)
 ```
 
+# Join Datasets
+
 # Join Trawl and ROMS
 
 Join the two datasets together, such that we have the appropriately-matched ROMS outputs
@@ -92,8 +103,20 @@ Join the two datasets together, such that we have the appropriately-matched ROMS
 ```{r}
 trawl_roms <- trawl %>% left_join(roms,by = c("date", "station", "roms_hindcast_day")) %>% 
   #clean up some columns
-  dplyr::select(date,station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30,species,cpue_kg_km2) %>% 
+  dplyr::select(date,trawl_id,station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30,species,cpue_kg_km2) %>% 
   # drop any rows with NAs
+  drop_na()
+```
+
+## Join Trawl and Substrate
+
+Join the substrate data by trawl ID number.
+
+```{r}
+substrate_thin <- substrate %>% 
+  dplyr::select(TRAWL_ID,prop_hard_mixed)
+trawl_roms <- trawl_roms %>% 
+  left_join(substrate_thin,by=c('trawl_id'="TRAWL_ID")) %>% 
   drop_na()
 ```
 
@@ -167,6 +190,12 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   # model formula
   formula <- paste0("cpue_kg_km2 ~ ")
   
+  # substrate relationship
+  substrate <- paste("prop_hard_mixed + I(prop_hard_mixed^2)")
+  #wiggly habitat relationship?
+  substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
+                      substrate)
+  
   # make the environmental effects
   enviro <- paste("mean_temp_roms_30_norm + 
                   I(mean_temp_roms_30_norm^2) + 
@@ -180,13 +209,14 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   if(use_depth) {
     formula = paste0(formula, " + depth + I(depth^2)")
   }
+  
   time_formula = "~ -1"
   if(time_varying) {
-    time_formula = paste0(time_formula, " + ", enviro)
+    time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
     time_varying = as.formula(time_formula)
     time = "year"
   } else {
-    formula = paste0(formula, " + ", enviro)
+    formula = paste0(formula, " + ", substrate, " + ", enviro)
     time_varying = NULL
     time = "year"
   }
@@ -221,38 +251,26 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
 
 # Try it Out
 
-Try it out with different options
-
-No spatial field, linear environment
+Try it out with different options.
 
 ```{r}
-sable1 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=F,hab_spline=F,env_spline=F,spline_k=3)
+sablefish_models <- crossing(spp="sablefish",spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
+  mutate(model_num=row_number())
+sablefish_models
 ```
 
-No spatial field, wiggly environment
+Run the models
 
 ```{r}
-sable2 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=F,hab_spline=F,env_spline=T,spline_k=3)
-```
-
-Spatial field, linear environment
-
-```{r}
-sable3 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3)
-```
-
-Spatial field, wiggly environment
-
-```{r}
-sable4 <- run_sdmTMB(sablefish_dat,spp="sablefish",nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=T,spline_k=3)
+sablefish_models <- sablefish_models %>% 
+  mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
 ```
 
 ## Output
 
 ```{r}
-sable1
-sable2
-sable3
-sable4
+outputs <- sablefish_models %>% 
+  pluck('model')
+outputs
 ```
 
