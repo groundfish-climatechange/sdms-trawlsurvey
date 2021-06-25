@@ -1,0 +1,122 @@
+---
+title: "Organize Habitat Data"
+author: "Owen Liu"
+date: "6/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(raster)
+library(rasterVis)
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(here)
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+# Purpose
+
+Organize and interpolate habitat (substrate) data from Joe Bizarro, Blake Feist, and Lewis Barnett into habitat variables that can be used in sdmTMB models.
+
+# Data Structure
+
+There are two versions of substrate data. One is a 25m by 25m grid, where each grid cell is a 1, 2, or 3 denoting hard, mixed, or soft substrate, respectively.
+
+The second version was put together by Blake Feist (README is in this repo), and uses the actual trawl tow lines to measure the proportion of each towline that traverses each type of substrate.
+
+For now we will organie both. Version 1 will be used in SDM projections, but summarizing it to the resolution of the ROMS grid, while Version 2 will be used in SDM model fitting.
+
+# Organize Version 1
+
+Import version 1 of the substrate data, and summarize onto the ROMS grid. Calculate the proportion of each ROMS cell covered by each substrate type.
+
+## Import Data
+
+```{r}
+# version 1, converted to a point feature
+habdat <- raster(here('data','substrate','bef','wc_sub_hms_i_UTM.tif'))
+
+# ROMS grid, converted to polygons
+roms_grid <- raster(here::here('data','substrate','bottom_layer_depth.grd'))
+roms_cellnums <- setValues(roms_grid,1:length(roms_grid))
+roms_sf <- rasterToPolygons(roms_cellnums) %>% st_as_sf()
+
+```
+
+## Transform and Resample ROMS data
+
+Spatially transform the ROMS grid into the same UTM projection as the substrate raster. We do this in sort of a weird way by rasterizing the ROMS sf object.
+
+```{r}
+roms_utm <- roms_sf %>% st_transform(crs(habdat)) %>% 
+  # rasterize
+  fasterize::fasterize(habdat,field='layer')
+roms_utm
+```
+
+Do a cross-tabulation, counting the overlap of cells by type between the ROMS and habitat layers:
+
+```{r}
+crosstab <- crosstab(roms_utm,habdat,long=T,progress='text')
+```
+
+Finally, summarize the crosstabulation to obtain the proportion of each habitat type in each represented ROMS cell. At this step, we combine habitat categories 1 and 2 (hard and mixed substrate) into one category.
+
+```{r}
+prop_hab_ROMS <- crosstab %>% 
+  rename(substrate=wc_sub_hms_i_UTM,
+         roms_cell=layer) %>% 
+  group_by(roms_cell) %>% 
+  mutate(totcells=sum(Freq)) %>% 
+  ungroup() %>%
+  mutate(substrate2=ifelse(substrate==3,"soft","hard")) %>%
+  mutate(prop=Freq/totcells) %>% 
+  group_by(roms_cell,substrate2) %>% 
+  summarise(prop=sum(prop)) %>% 
+  ungroup() %>% 
+  # add one last variable for just "proportion hard substrate"
+  mutate(prop_hard=ifelse(substrate2=="soft",1-prop,prop)) %>% 
+  mutate(prop_hard=round(prop_hard,digits=5))
+
+glimpse(prop_hab_ROMS)
+```
+
+## Visualize
+
+Re-attach the proportion of hard habitat to the original ROMS grid, then plot.
+
+```{r}
+prop_hard_ROMS <- prop_hab_ROMS %>% distinct(roms_cell,prop_hard)
+glimpse(prop_hard_ROMS)
+roms_prop_hard_grid <- roms_cellnums
+values(roms_prop_hard_grid) <- NA
+roms_prop_hard_grid[prop_hard_ROMS$roms_cell] <- prop_hard_ROMS$prop_hard
+
+levelplot(roms_prop_hard_grid)
+```
+
+# Organize Version 2
+
+```{r}
+# version 2
+habdat2 <- read_tsv(here::here('data','substrate','bef','Haul line substrate classification based on Bizzarro & Yoklavich.txt'))
+glimpse(habdat2)
+```
+
+For this dataset, all we do is sum up the proportion of hard and mixed into one category.
+
+```{r}
+habdat2 <- habdat2 %>% 
+  mutate(prop_hard_mixed=Proportion_hard+Proportion_mixed)
+```
+
+# Save
+
+```{r}
+write_rds(prop_hard_ROMS,here('data','substrate','prop_hard_by_ROMS_cell.rds'))
+write_rds(habdat2,here('data','substrate','substrate_by_trawlID.rds'))
+```
+
