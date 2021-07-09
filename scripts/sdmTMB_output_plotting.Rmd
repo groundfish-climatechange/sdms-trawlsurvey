@@ -1,0 +1,70 @@
+---
+title: "sdmTMB output plotting"
+author: "Owen Liu"
+date: "7/9/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(here)
+# vista is Eric Ward's library for looking at outputs
+library(vista)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+# Purpose
+
+Using the outputs from species distribution models in the script `sdmTMB models`, visualize the outputs to investigate the behavior of the models.
+
+```{r}
+# sdmTMB test (vignette)
+# data(pcod)
+# m <- sdmTMB(data = pcod,
+# formula = density ~ 0 + as.factor(year),
+# time = "year", spde = make_mesh(pcod, c("X", "Y"), n_knots = 80, type = "kmeans"),
+# family = tweedie(link = "log"), anisotropy = TRUE,
+# include_spatial = FALSE)
+# pcod$pred = predict(m)$est
+# pcod$resid = residuals(m)
+# pred_space(pcod,time="year")
+```
+
+## Load Models
+
+```{r}
+sdms <- read_rds(here::here('model output','four species sdmTMB test.rds')) %>% 
+  # split the nested data frame of models into a list of 4 (one list of models per species)
+  group_split(spp) %>% 
+  set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
+```
+
+In the testing of sdmTMB, 8 different models were run for four different species. For the purposes of testing diagnostic plots, let's test the diagnostic plots on some of these 32 models.
+
+```{r}
+# here is one of the sablefish models
+sable_model <- sdms %>% pluck('sablefish','model',8)
+sable_data <- sable$data
+sable_data$pred = predict(sable_model)$est
+sable_data$resid = residuals(sable_model)
+
+pred_space(sable_data,time="year",X="longitude",Y="latitude")
+```
+
+
+# Run Diagnostic plots
+
+```{r}
+
+```
+
+
