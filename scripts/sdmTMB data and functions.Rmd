@@ -57,6 +57,7 @@ trawl <- trawl %>%
   select(-realTrawl) %>% 
   # rename time to something more useful
   rename(roms_hindcast_day=time)
+glimpse(trawl)
 ```
 
 ## ROMS data
@@ -71,6 +72,7 @@ roms <- read_rds(here::here('data','joined_30d_lagged_t_o.rds')) %>%
   select(-realTrawl) %>% 
   # rename time to something more useful
   rename(roms_hindcast_day=time)
+glimpse(roms)
 ```
 
 ## Substrate Data
@@ -79,6 +81,7 @@ Here is the substrate data that Blake Feist matched to individual trawl tows.
 
 ```{r}
 substrate <- read_rds(here('data','substrate','substrate_by_trawlID.rds'))
+glimpse(substrate)
 ```
 
 

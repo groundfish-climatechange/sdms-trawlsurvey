@@ -1,0 +1,139 @@
+---
+title: "sdmTMB_projection"
+author: "Owen Liu"
+date: "7/9/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(here)
+# vista is Eric Ward's library for looking at outputs
+library(vista)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+# Purpose
+
+Using species distribution models fit to hindcast ROMS data, project future species distributions using projected ROMS data. The models were fitted using `sdmTMB` in script `sdmTMB models.Rmd`. We now take those fitted models and apply them to the projected oceanographic data.
+
+# Load Fitted Models and Projected ROMS
+
+## Load Models
+
+```{r}
+sdms <- read_rds(here::here('model output','four species sdmTMB test.rds')) %>% 
+  # split the nested data frame of models into a list of 4 (one list of models per species)
+  group_split(spp) %>% 
+  set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
+```
+
+In the testing of sdmTMB, 8 different models were run for four different species. For the purposes of testing diagnostic plots, let's test the diagnostic plots on some of these 32 models.
+
+```{r}
+# here is one of the sablefish models as an example
+sable_model <- sdms %>% pluck('sablefish','model',8)
+```
+
+## Load Projected ROMS data
+
+The projected ROMS gridded data have been processed into a tibble that includes the average value of bottom temperature and bottom oxygen for each year at each grid point, along with the average value of that environmental variable over the 30d leading up to July 31 (the midpoint of the trawl survey season) each year. These values are for each of 3 global climate models, making a total of 12 variables.
+
+```{r}
+roms <- read_rds(here::here('data','mean_30dmean_bt_ox_allmodels_1980_2100.rds'))
+glimpse(roms)
+```
+
+Calculate latitude and longitude in UTM coordinates, which is what the models were fitted with
+
+```{r}
+roms <- roms %>% 
+  # convert to sf object
+  st_as_sf(coords=c('lon','lat'),crs=4326,remove=F) %>%
+  # transform to UTM zone 10
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
+  # add new coords as vars
+  mutate(latitude = sf::st_coordinates(.)[,2],
+         longitude = sf::st_coordinates(.)[,1]) %>%
+  # convert back to normal df
+  st_set_geometry(NULL)
+```
+
+
+## Load Habitat Data
+
+This is subject to change, but one of the predictors in the SDMs right now is a habitat variable---proportion of hard substrate. Using a composite substrate data layer, we have separately calculated the proportion of edge ROMS grid cell that consists of hard substrate, and will use that in these projections.
+
+```{r}
+hab <- read_rds(here('data','substrate','prop_hard_by_ROMS_cell.rds'))
+
+# the roms grid, to match habitat values to lat/lon
+roms_ll <- read_rds(here::here('data','roms_latlon_key.rds')) %>% 
+  mutate(roms_cell=row_number())
+
+hab <- hab %>% 
+  left_join(roms_ll,by="roms_cell") %>% 
+  select(lon,lat,prop_hard)
+```
+
+
+# Predict
+
+In order to use the fitted models to project on ROMS data, we have to make sure the models have all the variables that were used in model fitting. Working with our example model for now...
+
+```{r}
+sable_model$formula
+```
+
+This model used proportion hard substrate, along with 30-day lagged mean (normalized) temperature and oxygen. We need to use the same normalization to transform the projected variables.
+
+Function to make predictions for one model. For now we only use the "midpoint" environmental data (i.e., the 30 day lag from July 31st)
+
+```{r}
+# give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', or 'ipsl'
+make_predictions <- function(modelobj,gcm="hadl"){
+
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data for the chosen gcm
+  newdata <- roms %>% 
+    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
+    left_join(hab,by=c("lat","lon")) %>% 
+    drop_na() %>% 
+    select(year,latitude,longitude,prop_hard,contains(paste0("30d_",gcm)))
+  
+  temperature <- newdata %>% select(contains('bt')) %>% 
+    set_names('temperature') %>% 
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% select(contains('bt')) %>% 
+    set_names('oxygen') %>% 
+    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+
+  newdata <- newdata %>% 
+    bind_cols(temperature) %>% 
+    bind_cols(oxygen) %>% 
+    select(-temperature,-oxygen) %>% 
+    mutate(year=as.double(year))
+  
+  # now we can make the predictions
+  predicted_cpue_km2 <- predict(modelobj,newdata)
+  #Error: Some new time elements were found in `newdata`. For now, make sure only time elements from the original dataset are present. If you would like to predict on new time elements, see the `extra_time` argument in `?sdmTMB:::predict.sdmTMB`.
+}
+```
+
+

@@ -53,18 +53,20 @@ In the testing of sdmTMB, 8 different models were run for four different species
 ```{r}
 # here is one of the sablefish models
 sable_model <- sdms %>% pluck('sablefish','model',8)
-sable_data <- sable$data
+sable_data <- sable_model$data
 sable_data$pred = predict(sable_model)$est
 sable_data$resid = residuals(sable_model)
 
-pred_space(sable_data,time="year",X="longitude",Y="latitude")
+pred_space(sable_data,time="year",X="longitude",Y="latitude")+
+  coord_equal()
+pred_time(sable_data,time="year")
 ```
 
 
 # Run Diagnostic plots
 
 ```{r}
-
+d <- diagnostic_plots(sable_data,time="year",X="longitude",Y="latitude")
 ```
 
 
