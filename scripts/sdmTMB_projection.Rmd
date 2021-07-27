@@ -82,7 +82,8 @@ roms_ll <- read_rds(here::here('data','roms_latlon_key.rds')) %>%
 
 hab <- hab %>% 
   left_join(roms_ll,by="roms_cell") %>% 
-  select(lon,lat,prop_hard)
+  select(lon,lat,prop_hard) %>% 
+  rename(prop_hard_mixed=prop_hard)
 ```
 
 
@@ -95,6 +96,8 @@ sable_model$formula
 ```
 
 This model used proportion hard substrate, along with 30-day lagged mean (normalized) temperature and oxygen. We need to use the same normalization to transform the projected variables.
+
+## Prediction Function
 
 Function to make predictions for one model. For now we only use the "midpoint" environmental data (i.e., the 30 day lag from July 31st)
 
@@ -114,7 +117,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
     ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
-    select(year,latitude,longitude,prop_hard,contains(paste0("30d_",gcm)))
+    select(year,latitude,longitude,prop_hard_mixed,contains(paste0("30d_",gcm)))
   
   temperature <- newdata %>% select(contains('bt')) %>% 
     set_names('temperature') %>% 
@@ -127,7 +130,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
   newdata <- newdata %>% 
     bind_cols(temperature) %>% 
     bind_cols(oxygen) %>% 
-    select(-temperature,-oxygen) %>% 
+    select(-temperature,-oxygen) %>%
     mutate(year=as.double(year))
   
   # now we can make the predictions
@@ -136,4 +139,16 @@ make_predictions <- function(modelobj,gcm="hadl"){
 }
 ```
 
+## Project Species
+
+```{r}
+sable_future <- make_predictions(sable_model)
+glimpse(sable_future)
+sable_future %>% 
+  group_by(year) %>% 
+  summarise(mean_est=mean(est,na.rm=T),sd_est=sd(est,na.rm=T)) %>% 
+  ggplot(aes(year,mean_est))+
+  geom_line()+
+  labs(x="year",y="mean cpue")
+```
 

@@ -229,11 +229,11 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   if(time_varying) {
     time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
     time_varying = as.formula(time_formula)
-    time = "year"
+    # time = "year"
   } else {
     formula = paste0(formula, " + ", substrate, " + ", enviro)
     time_varying = NULL
-    time = "year"
+    # time = "year"
   }
   
   # fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned
@@ -242,7 +242,7 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
     formula = as.formula(formula),
     time_varying = time_varying,
     spde = spde,
-    time = time,
+    # time = time,
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = FALSE,
