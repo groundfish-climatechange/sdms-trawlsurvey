@@ -13,14 +13,26 @@ output:
 library(sdmTMB)
 library(tidyverse)
 library(lubridate)
+library(rnaturalearth)
 library(sf)
 library(here)
 # vista is Eric Ward's library for looking at outputs
 library(vista)
+library(cowplot)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
 ```
+
+```{r}
+# spatial background map
+# load west cost land for mapping
+coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
+  filter(name %in% c('California','Oregon','Washington','Nevada')) %>%
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+```
+
 
 # Purpose
 
@@ -28,12 +40,27 @@ Using species distribution models fit to hindcast ROMS data, project future spec
 
 # Load Fitted Models and Projected ROMS
 
+## Define Spatial Domain
+
+For a spatial domain of projection, we use the maximal extent of the trawl survey data. This avoids out-of-domain projection of the SDMs. This spatial domain was created by finding a convex hull of all trawl survey locations, then cropping it using a coastline.
+
+```{r}
+projection_extent <- read_rds(here::here('data','cropped_domain_for_projected_sdms.rds'))
+ggplot()+
+  geom_sf(data=coast)+
+  geom_sf(data=projection_extent,fill='red',alpha=0.5)+
+  labs(title="Domain for Projected SDMs")
+
+# does this look right?
+```
+
+
 ## Load Models
 
 ```{r}
 sdms <- read_rds(here::here('model output','four species sdmTMB test.rds')) %>% 
-  # split the nested data frame of models into a list of 4 (one list of models per species)
   group_split(spp) %>% 
+  # split the nested data frame of models into a list of 4 (one list of models per species)
   set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
 ```
 
@@ -53,7 +80,7 @@ roms <- read_rds(here::here('data','mean_30dmean_bt_ox_allmodels_1980_2100.rds')
 glimpse(roms)
 ```
 
-Calculate latitude and longitude in UTM coordinates, which is what the models were fitted with
+Calculate latitude and longitude in UTM coordinates, which is what the models were fitted with. NOTE: this is also where we crop these ROMS data to the designated SDM projection domain (see above)
 
 ```{r}
 roms <- roms %>% 
@@ -61,13 +88,14 @@ roms <- roms %>%
   st_as_sf(coords=c('lon','lat'),crs=4326,remove=F) %>%
   # transform to UTM zone 10
   st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
+  # crop to SDM extent
+  st_intersection(projection_extent) %>%
   # add new coords as vars
   mutate(latitude = sf::st_coordinates(.)[,2],
          longitude = sf::st_coordinates(.)[,1]) %>%
   # convert back to normal df
   st_set_geometry(NULL)
 ```
-
 
 ## Load Habitat Data
 
@@ -77,13 +105,18 @@ This is subject to change, but one of the predictors in the SDMs right now is a 
 hab <- read_rds(here('data','substrate','prop_hard_by_ROMS_cell.rds'))
 
 # the roms grid, to match habitat values to lat/lon
-roms_ll <- read_rds(here::here('data','roms_latlon_key.rds')) %>% 
+roms_ll <- read_rds(here::here('data','roms_latlon_key_topleft_start.rds')) %>% 
   mutate(roms_cell=row_number())
 
 hab <- hab %>% 
   left_join(roms_ll,by="roms_cell") %>% 
-  select(lon,lat,prop_hard) %>% 
+  dplyr::select(lon,lat,prop_hard,depth_m) %>% 
   rename(prop_hard_mixed=prop_hard)
+
+# hab_sf <- hab %>% st_as_sf(coords=c('lon','lat'),crs=4326) %>% 
+#   st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+# ggplot()+geom_sf(data=hab_sf,aes(col=prop_hard_mixed))+geom_sf(data=coast)
 ```
 
 
@@ -103,7 +136,7 @@ Function to make predictions for one model. For now we only use the "midpoint" e
 
 ```{r}
 # give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', or 'ipsl'
-make_predictions <- function(modelobj,gcm="hadl"){
+make_predictions <- function(modelobj,gcm="hadl",return_tmb_object=F){
 
   original_model_data <- modelobj$data
   # need to use the original (hindcast) environmental data to scale the projected data
@@ -117,24 +150,24 @@ make_predictions <- function(modelobj,gcm="hadl"){
     ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
-    select(year,latitude,longitude,prop_hard_mixed,contains(paste0("30d_",gcm)))
+    dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
   
-  temperature <- newdata %>% select(contains('bt')) %>% 
+  temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
     set_names('temperature') %>% 
     mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
   
-  oxygen <- newdata %>% select(contains('bt')) %>% 
+  oxygen <- newdata %>% dplyr::select(contains('bt')) %>% 
     set_names('oxygen') %>% 
     mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
 
   newdata <- newdata %>% 
     bind_cols(temperature) %>% 
     bind_cols(oxygen) %>% 
-    select(-temperature,-oxygen) %>%
+    dplyr::select(-temperature,-oxygen) %>%
     mutate(year=as.double(year))
   
   # now we can make the predictions
-  predicted_cpue_km2 <- predict(modelobj,newdata)
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=ifelse(return_tmb_object,T,F))
   #Error: Some new time elements were found in `newdata`. For now, make sure only time elements from the original dataset are present. If you would like to predict on new time elements, see the `extra_time` argument in `?sdmTMB:::predict.sdmTMB`.
 }
 ```
@@ -152,3 +185,107 @@ sable_future %>%
   labs(x="year",y="mean cpue")
 ```
 
+## Center of Gravity?
+
+Plot center of gravity over time
+
+```{r}
+# from sdm-TMB
+sable_cog <- make_predictions(sable_model,return_tmb_object = T) %>% 
+  get_cog()
+```
+
+```{r}
+# calc_cog <- function(df,makeplot=T){
+#   cog_ts <- df %>% 
+#     group_by(year) %>% 
+#     summarise(cogx=weighted.mean(longitude,est,na.rm=T),
+#               cogy=weighted.mean(latitude,est,na.rm=T)) %>% 
+#     ungroup()
+#   
+#   if(makeplot) {
+#     d<-cog_ts %>% 
+#       st_as_sf(coords=c("cogx","cogy"),crs = "+proj=utm +zone=10 +datum=WGS84 +units=km",remove=F)
+#     p <- ggplot()+
+#       geom_sf(data=coast,fill='gray50')+
+#       geom_sf(data=d,aes(col=year))
+#       # geom_path(data=d,aes(cogx,cogy,col=year),arrow=arrow(type = 'closed'))
+#     print(p)
+#   }
+#   return(cog_ts)
+# }
+sable_cog <- calc_cog(sable_future,makeplot=T)
+glimpse(sable_cog)
+```
+
+# Hovmoller Plots
+
+Add latitude and depth bins, then plot
+
+```{r}
+make_hov <- function(df_pred){
+  
+  depthbins <- seq(-3500,0,by=100)
+  latbins <- seq(30,50,by=0.5)
+  
+  out <- df_pred %>% 
+    # add lat and depth bins
+    mutate(latbin=latbins[findInterval(lat,vec=latbins)],
+           depthbin=depthbins[findInterval(depth_m,vec=depthbins)]) %>% 
+    ungroup()
+  
+  #summarize data by year/lat or year/depth
+  
+  outlat <- out %>% 
+    group_by(year,latbin) %>% 
+    summarise(mean_cpue=mean(est,na.rm=T))
+  
+  outdepth <- out %>% 
+    group_by(year,depthbin) %>% 
+    summarise(mean_cpue=mean(est,na.rm=T))
+  
+  p1 <- outlat %>% 
+    ggplot(aes(year,latbin,fill=mean_cpue))+
+    geom_tile()+
+    scale_fill_gradient2(
+        low = 'blue', mid = 'white', high = 'red',
+        midpoint = mean(out$est,na.rm=T))+
+    scale_x_continuous(expand = c(0, 0))+
+    scale_y_continuous(expand=c(0,0))+
+    theme_classic()+
+    theme(legend.position="right",
+          legend.title = element_blank(),
+          plot.title = element_text(size = 14),
+          plot.subtitle = element_text(size = 12)) +
+    theme( panel.border = element_rect(colour = "black", fill=NA, size=1))+
+    labs(title="Abundance Index by Latitude",x="Year",y="Latitude")
+  
+  p2 <- outdepth %>% 
+    ggplot(aes(year,depthbin,fill=mean_cpue))+
+    geom_tile()+
+    scale_fill_gradient2(
+        low = 'blue', mid = 'white', high = 'red',
+        midpoint = mean(out$est,na.rm=T))+
+    scale_x_continuous(expand = c(0, 0))+
+    scale_y_continuous(expand=c(0,0),breaks = seq(-3500,0,by=300),labels=seq(-3500,0,by=300))+
+    theme_classic()+
+    theme(legend.position="right",
+          legend.title = element_blank(),
+          plot.title = element_text(size = 14),
+          plot.subtitle = element_text(size = 12)) +
+    theme( panel.border = element_rect(colour = "black", fill=NA, size=1))+
+    labs(title="Abundance Index by Depth",x="Year",y="Depth")
+  
+  comb <- plot_grid(p1,p2,nrow=1)
+  comb
+}
+
+make_hov(sable_future)
+```
+
+
+## Abundance by Time by Latitude
+
+
+
+## Abundance by Time by Depth
