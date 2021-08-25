@@ -25,6 +25,18 @@ options(dplyr.summarise.inform=FALSE)
 ```
 
 ```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+
+```{r}
 # spatial background map
 # load west cost land for mapping
 coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
@@ -76,13 +88,19 @@ sable_model <- sdms %>% pluck('sablefish','model',8)
 The projected ROMS gridded data have been processed into a tibble that includes the average value of bottom temperature and bottom oxygen for each year at each grid point, along with the average value of that environmental variable over the 30d leading up to July 31 (the midpoint of the trawl survey season) each year. These values are for each of 3 global climate models, making a total of 12 variables.
 
 ```{r}
+# pre-processed and clipped to projection extent
+roms <- read_rds(here('data','roms_for_sdm_projection.rds'))
+```
+
+```{r,eval=FALSE}
+# only run these chunks if you need to reproduce the roms (UTM, clipped to projection extent) data
 roms <- read_rds(here::here('data','mean_30dmean_bt_ox_allmodels_1980_2100.rds'))
 glimpse(roms)
 ```
 
 Calculate latitude and longitude in UTM coordinates, which is what the models were fitted with. NOTE: this is also where we crop these ROMS data to the designated SDM projection domain (see above)
 
-```{r}
+```{r, eval=FALSE}
 roms <- roms %>% 
   # convert to sf object
   st_as_sf(coords=c('lon','lat'),crs=4326,remove=F) %>%
@@ -96,6 +114,11 @@ roms <- roms %>%
   # convert back to normal df
   st_set_geometry(NULL)
 ```
+
+```{r}
+# write_rds(roms,here('data','roms_for_sdm_projection.rds'))
+```
+
 
 ## Load Habitat Data
 
@@ -166,8 +189,10 @@ make_predictions <- function(modelobj,gcm="hadl",return_tmb_object=F){
     dplyr::select(-temperature,-oxygen) %>%
     mutate(year=as.double(year))
   
+  # years to predict
+  yrs <- sort(unique(newdata$year))
   # now we can make the predictions
-  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=ifelse(return_tmb_object,T,F))
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=ifelse(return_tmb_object,T,F),extra_time=yrs)
   #Error: Some new time elements were found in `newdata`. For now, make sure only time elements from the original dataset are present. If you would like to predict on new time elements, see the `extra_time` argument in `?sdmTMB:::predict.sdmTMB`.
 }
 ```
@@ -175,49 +200,72 @@ make_predictions <- function(modelobj,gcm="hadl",return_tmb_object=F){
 ## Project Species
 
 ```{r}
-sable_future <- make_predictions(sable_model)
-glimpse(sable_future)
-sable_future %>% 
-  group_by(year) %>% 
-  summarise(mean_est=mean(est,na.rm=T),sd_est=sd(est,na.rm=T)) %>% 
-  ggplot(aes(year,mean_est))+
+sable_future_index <- make_predictions(sable_model,return_tmb_object = T) %>% get_index()
+# glimpse(sable_future)
+sable_future_index %>% 
+  ggplot(aes(year,est,ymax=upr,ymin=lwr))+
   geom_line()+
-  labs(x="year",y="mean cpue")
+  geom_ribbon(fill='red',alpha=0.5)+
+  scale_x_continuous(expand=c(0,2))+
+  labs(x="Year",y="Index of Abundance",title="Sablefish Abundance Index")
 ```
 
-## Center of Gravity?
+## Center of Gravity
 
 Plot center of gravity over time
 
 ```{r}
 # from sdm-TMB
 sable_cog <- make_predictions(sable_model,return_tmb_object = T) %>% 
-  get_cog()
+  get_cog() %>% 
+  dplyr::select(-max_gradient,-bad_eig)
+glimpse(sable_cog)
+# reorganize output (X and Y coords)
+sable_cog_x <- sable_cog %>% filter(coord=="X")%>% 
+  rename_with(~paste0(.,"_x"),all_of(c('est','lwr','upr','se'))) %>% 
+  dplyr::select(-coord)
+sable_cog_y <- sable_cog %>% filter(coord=="Y") %>% rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se'))) %>% 
+  dplyr::select(-coord)
+sable_cog_2d <- sable_cog_x %>% left_join(sable_cog_y)
 ```
 
+Plot the X and Y COG components over time
+
 ```{r}
-# defunct: want to us sdmTMB::get_cog instead
-# calc_cog <- function(df,makeplot=T){
-#   cog_ts <- df %>% 
-#     group_by(year) %>% 
-#     summarise(cogx=weighted.mean(longitude,est,na.rm=T),
-#               cogy=weighted.mean(latitude,est,na.rm=T)) %>% 
-#     ungroup()
-#   
-#   if(makeplot) {
-#     d<-cog_ts %>% 
-#       st_as_sf(coords=c("cogx","cogy"),crs = "+proj=utm +zone=10 +datum=WGS84 +units=km",remove=F)
-#     p <- ggplot()+
-#       geom_sf(data=coast,fill='gray50')+
-#       geom_sf(data=d,aes(col=year))
-#       # geom_path(data=d,aes(cogx,cogy,col=year),arrow=arrow(type = 'closed'))
-#     print(p)
-#   }
-#   return(cog_ts)
-# }
-sable_cog <- calc_cog(sable_future,makeplot=T)
-glimpse(sable_cog)
+library(cowplot)
+cog_x_plot <- sable_cog_2d %>% 
+  ggplot(aes(year,est_x,ymax=upr_x,ymin=lwr_x))+
+  geom_line()+
+  geom_ribbon(fill='red',alpha=0.5)+
+  scale_x_continuous(expand=c(0,5))+
+  labs(x="Year",y="Eastings (km)",title="Center of Gravity, X")
+
+cog_y_plot <- sable_cog_2d %>% 
+  ggplot(aes(year,est_y,ymax=upr_y,ymin=lwr_y))+
+  geom_line()+
+  geom_ribbon(fill='red',alpha=0.5)+
+  scale_x_continuous(expand=c(0,5))+
+  labs(x="Year",y="Northings (km)",title="Center of Gravity, Y")
+
+plot_grid(cog_x_plot,cog_y_plot,nrow=2)
 ```
+
+
+Plot the COG spatially
+
+```{r}
+sable_cog_2d_sf <- sable_cog_2d %>% st_as_sf(coords=c('est_x','est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+bbox <- st_bbox(projection_extent)
+
+ggplot()+
+  geom_sf(data=coast)+
+  geom_sf(data=sable_cog_2d_sf,aes(col=year))+
+  labs(title="Sablefish Center of Gravity")+
+  xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+  
+```
+
 
 # Hovmoller Plots
 

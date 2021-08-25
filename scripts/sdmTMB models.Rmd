@@ -53,6 +53,11 @@ Here we actually run the models.
 ```{r}
 sdmTMB_models <- sdmTMB_models %>% 
   mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
+
+#test model
+test_model <- sdmTMB_models %>% 
+  slice(6) %>% 
+  mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
 ```
 
 Save model outputs as an .rds
