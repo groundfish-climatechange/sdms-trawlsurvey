@@ -196,6 +196,7 @@ sable_cog <- make_predictions(sable_model,return_tmb_object = T) %>%
 ```
 
 ```{r}
+# defunct: want to us sdmTMB::get_cog instead
 # calc_cog <- function(df,makeplot=T){
 #   cog_ts <- df %>% 
 #     group_by(year) %>% 
