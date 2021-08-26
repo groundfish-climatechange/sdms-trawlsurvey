@@ -2,10 +2,12 @@
 title: "Run sdmTMB"
 author: "Owen Liu"
 date: "6/8/2021"
-output: 
+output:
+  pdf_document:
+    toc: yes
   html_document:
-    toc: true
-    toc_float: true
+    toc: yes
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -264,6 +266,63 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   }
   return(m)
 }
+```
+
+If we wanted to use cross validation, we could do that in a couple ways. For example, with a single train/test split, we could assign 10% of the observations to the test set and not fit the model for all the folds (fitting to all folds is the default in sdmTMB_cv).
+
+```{r eval=FALSE}
+test_set = sample(1:nrow(modeldat), size = round(0.1*nrow(modeldat)), replace=FALSE)
+modeldat$fold = 1
+modeldat$fold[test_set] = 2
+```
+
+Alternatively we could do something like assign all points for a given year (e.g. 2018) to the test set.
+
+```{r eval=FALSE}
+modeldat$fold = ifelse(modeldat$year=="2018",2,1)
+```
+
+A third option is to use blockCV to assign the folds. If you have raster data, there's a few functions in that package (spatialAutoRange, rangeExplorer) to estimate the range -- but because those are probably difficult to estimate with the kind of data we have, I've generally used ranges in the 50-75km, which is about what's estimated for many WCBTS species.
+
+```{r eval=FALSE}
+  the_data <- sf::st_as_sf(modeldat, coords = c("longitude", "latitude"))
+  sb <- spatialBlock(
+    speciesData = the_data,
+    species = "xxxx",
+    theRange = 50,
+    k = 10,
+    selection = "systematic",
+    showBlocks = FALSE
+  )
+  modeldat$fold = ifelse(sb$fold==1,2,1)
+```
+
+And then we can use sdmTMB_cv to do the estimation for each fold. Because we did the test-train split, we'll fit the model 2x, but just be interested in the 1st fit.
+```{r eval = FALSE}
+m_cv <- try( sdmTMB_cv( 
+    formula = as.formula(formula),
+    time_varying = time_varying,
+    spde = spde,
+    k_folds = 2,
+    fold_ids = "fold",
+    time = time,
+    family = tweedie(link = "log"),
+    data = modeldat,
+    anisotropy = FALSE,
+    spatial_only = T,
+    #extra_time argument necessary for prediction?
+    extra_time=1980:2100,
+    map_rf=ifelse(spatial_field,F,T)
+  ), 
+  silent=TRUE)
+
+# predicted values for the 2nd fold (test)
+m_cv$data$cv_predicted[which(m_cv$data$cv_fold==2)]
+# log likelihood values for the 2nd fold (test)
+m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)]
+
+total_pred_ll = sum(m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)])
+
 ```
 
 This is the end of this script. Moving the actual modelling (i.e., the calling of this function) to a new script.
