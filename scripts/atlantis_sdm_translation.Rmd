@@ -1,0 +1,100 @@
+---
+title: "Atlantis Grid SDM Translation"
+author: "Owen Liu"
+date: "9/3/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(rbgm)
+library(sf)
+library(here)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+# Import Data
+
+Import spatial grid data
+
+```{r}
+# Atlantis grid
+fl <- here::here("data",'grids',"CalCurrentV3_utm.bgm")
+# load the file
+bgm <- read_bgm(fl)
+names(bgm)
+emocc_sf <- box_sf(bgm) %>% dplyr::select(box_id,label)
+st_crs(emocc_sf) <- st_crs(attr(emocc_sf$geometry, "crs")$proj)
+
+# the ROMS grid, clipped to the SDM projection extent
+roms <- read_rds(here('data','roms_for_sdm_projection.rds')) %>%
+  # just find the unique grid cells (we don't care about time series, only grid cell locations right now)
+  dplyr::distinct(lat,lon,longitude,latitude) %>% 
+  st_as_sf(coords=c('longitude','latitude'),crs= "+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+
+# load west cost land for mapping
+coaststates <- ne_countries(continent="North America",returnclass = 'sf') %>% 
+  filter(name %in% c('Canada','United States','Mexico')) %>% 
+  st_transform(st_crs(roms))
+```
+
+Convert Atlantis BGM to the same CRS as ROMS
+
+```{r}
+emocc_sf <- emocc_sf %>% 
+  st_transform(st_crs(roms))
+```
+
+A quick plot to show what we are starting with
+
+```{r}
+bbox=st_bbox(emocc_sf)
+ggplot()+
+  geom_sf(data=coaststates,fill='gray50')+
+  geom_sf(data=emocc_sf,fill='blue',alpha=0.5)+
+  geom_sf(data=roms,size=0.1)+
+  xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+```
+
+# Spatial Join
+
+Match the ROMS points to an Atlantis box
+
+```{r}
+roms_atlantis_spatial_join <- roms %>% 
+  st_join(emocc_sf)
+glimpse(roms_atlantis_spatial_join)
+```
+
+Now we have a key matching ROMS points to their appropriate boxes
+
+# Atlantis Coupled Boxes
+
+Credit to Pierre-Yves
+
+```{r}
+cps <- read_csv(here('data','grids','Atlantis_polygon_couples.csv'),col_types = 'dc')
+glimpse(cps)
+```
+
