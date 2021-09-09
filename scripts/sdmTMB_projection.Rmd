@@ -19,6 +19,7 @@ library(here)
 # vista is Eric Ward's library for looking at outputs
 library(vista)
 library(cowplot)
+library(RANN)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -74,12 +75,8 @@ sdms <- read_rds(here::here('model output','four species sdmTMB test.rds')) %>%
   group_split(spp) %>% 
   # split the nested data frame of models into a list of 4 (one list of models per species)
   set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
-```
 
-In the testing of sdmTMB, 8 different models were run for four different species. For the purposes of testing diagnostic plots, let's test the diagnostic plots on some of these 32 models.
-
-```{r}
-# here is one of the sablefish models as an example
+##
 sable_model <- sdms %>% pluck('sablefish','model',8)
 ```
 
@@ -159,7 +156,7 @@ Function to make predictions for one model. For now we only use the "midpoint" e
 
 ```{r}
 # give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', or 'ipsl'
-make_predictions <- function(modelobj,gcm="hadl",return_tmb_object=F){
+make_predictions <- function(modelobj,gcm="hadl"){
 
   original_model_data <- modelobj$data
   # need to use the original (hindcast) environmental data to scale the projected data
@@ -192,22 +189,106 @@ make_predictions <- function(modelobj,gcm="hadl",return_tmb_object=F){
   # years to predict
   yrs <- sort(unique(newdata$year))
   # now we can make the predictions
-  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=ifelse(return_tmb_object,T,F),extra_time=yrs)
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=T,extra_time=yrs)
   #Error: Some new time elements were found in `newdata`. For now, make sure only time elements from the original dataset are present. If you would like to predict on new time elements, see the `extra_time` argument in `?sdmTMB:::predict.sdmTMB`.
 }
 ```
 
-## Project Species
+Example
 
 ```{r}
-sable_future_index <- make_predictions(sable_model,return_tmb_object = T) %>% get_index()
-# glimpse(sable_future)
-sable_future_index %>% 
-  ggplot(aes(year,est,ymax=upr,ymin=lwr))+
-  geom_line()+
-  geom_ribbon(fill='red',alpha=0.5)+
-  scale_x_continuous(expand=c(0,2))+
-  labs(x="Year",y="Index of Abundance",title="Sablefish Abundance Index")
+sable_future <- make_predictions(sable_model)
+glimpse(sable_future$data)
+```
+
+# Plots
+
+## Annual Map
+
+```{r}
+# pretty grid
+gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+  st_intersection(projection_extent)
+gr_xy <- st_coordinates(gr)
+
+map_year <- function(modelobj,yr_vec=c(2000),return_pred_df=F){
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(modelobj$data$est),0.99))
+  df <- modelobj$data %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(projection_extent)
+  
+  if(return_pred_df) {out <- gr_pred}
+  
+  else{
+      out<-ggplot(coast)+
+        geom_sf()+
+        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+        # scale_color_viridis_c()+
+        geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+        scale_fill_viridis_c(limits=scl)+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(x="",y="",fill="CPUE")
+  }
+  out
+}
+map_year(sable_future,yr_vec=(c(2010)))
+```
+
+## Difference Map
+
+Compare a map for a given year to the historical average (1980-2010)
+
+```{r}
+#1980-2010 baseline
+make_comparison_map <- function(modelobj,yr=2050){
+  basepred <- map_year(modelobj,yr_vec=1980:2010,return_pred_df = T)
+  newpred <- map_year(modelobj,yr_vec=yr,return_pred_df = T) %>% 
+    mutate(est_comp=est) %>% dplyr::select(-est)
+  both <- basepred %>% 
+    left_join(newpred,by=c('X','Y')) %>% 
+    mutate(diffpred=est_comp-est)
+  out<-ggplot(coast)+
+        geom_sf()+
+        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+        # scale_color_viridis_c()+
+        geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
+        scale_fill_viridis_c(direction = -1)+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(x="",y="",fill="Difference")
+  out
+}
+make_comparison_map(sable_future,yr=2050)
+```
+
+
+## Index of Abundance
+
+```{r}
+make_index <- function(modelobj,gcm="hadl"){
+  sppname <- unique(modelobj$fit_obj$data$species) %>% tools::toTitleCase()
+  ind <- modelobj %>% get_index()
+  p <- ind %>% 
+    ggplot(aes(year,est/1000,ymax=upr/1000,ymin=lwr/1000))+
+    geom_line()+
+    geom_ribbon(fill='red',alpha=0.5)+
+    scale_x_continuous(expand=c(0,2))+
+    labs(x="Year",y="Index of Abundance",title=paste(sppname, "Abundance Index"))
+  p
+}
+```
+
+```{r}
+make_index(sable_future)
 ```
 
 ## Center of Gravity
@@ -215,64 +296,64 @@ sable_future_index %>%
 Plot center of gravity over time
 
 ```{r}
-# from sdm-TMB
-sable_cog <- make_predictions(sable_model,return_tmb_object = T) %>% 
-  get_cog() %>% 
-  dplyr::select(-max_gradient,-bad_eig)
-glimpse(sable_cog)
+make_cog <- function(modelobj,gcm="hadl"){
+  sppname <- unique(modelobj$fit_obj$data$species) %>% tools::toTitleCase()
+  cog <- modelobj %>% 
+    get_cog() %>% 
+    dplyr::select(-max_gradient,-bad_eig)
+
 # reorganize output (X and Y coords)
-sable_cog_x <- sable_cog %>% filter(coord=="X")%>% 
-  rename_with(~paste0(.,"_x"),all_of(c('est','lwr','upr','se'))) %>% 
-  dplyr::select(-coord)
-sable_cog_y <- sable_cog %>% filter(coord=="Y") %>% rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se'))) %>% 
-  dplyr::select(-coord)
-sable_cog_2d <- sable_cog_x %>% left_join(sable_cog_y)
-```
-
-Plot the X and Y COG components over time
-
-```{r}
-library(cowplot)
-cog_x_plot <- sable_cog_2d %>% 
-  ggplot(aes(year,est_x,ymax=upr_x,ymin=lwr_x))+
-  geom_line()+
-  geom_ribbon(fill='red',alpha=0.5)+
-  scale_x_continuous(expand=c(0,5))+
-  labs(x="Year",y="Eastings (km)",title="Center of Gravity, X")
-
-cog_y_plot <- sable_cog_2d %>% 
-  ggplot(aes(year,est_y,ymax=upr_y,ymin=lwr_y))+
-  geom_line()+
-  geom_ribbon(fill='red',alpha=0.5)+
-  scale_x_continuous(expand=c(0,5))+
-  labs(x="Year",y="Northings (km)",title="Center of Gravity, Y")
-
-plot_grid(cog_x_plot,cog_y_plot,nrow=2)
-```
-
-
-Plot the COG spatially
-
-```{r}
-sable_cog_2d_sf <- sable_cog_2d %>% st_as_sf(coords=c('est_x','est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
-
-bbox <- st_bbox(projection_extent)
-
-ggplot()+
-  geom_sf(data=coast)+
-  geom_sf(data=sable_cog_2d_sf,aes(col=year))+
-  labs(title="Sablefish Center of Gravity")+
-  xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+  cog_x <- cog %>% filter(coord=="X")%>% 
+    rename_with(~paste0(.,"_x"),all_of(c('est','lwr','upr','se'))) %>% 
+    dplyr::select(-coord)
+  cog_y <- cog %>% filter(coord=="Y") %>% 
+    rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se'))) %>% 
+    dplyr::select(-coord)
+  cog_2d <- cog_x %>% left_join(cog_y,by='year')
   
+  cog_x_plot <- cog_2d %>% 
+    ggplot(aes(year,est_x,ymax=upr_x,ymin=lwr_x))+
+    geom_line()+
+    geom_ribbon(fill='red',alpha=0.5)+
+    scale_x_continuous(expand=c(0,5))+
+    labs(x="Year",y="Eastings (km)",title="Center of Gravity, X")
+  
+  cog_y_plot <- cog_2d %>% 
+    ggplot(aes(year,est_y,ymax=upr_y,ymin=lwr_y))+
+    geom_line()+
+    geom_ribbon(fill='red',alpha=0.5)+
+    scale_x_continuous(expand=c(0,5))+
+    labs(x="Year",y="Northings (km)",title="Center of Gravity, Y")
+  
+  cog2d_timeseries <- plot_grid(cog_x_plot,cog_y_plot,nrow=2)
+  
+  cog_2d_sf <- cog_2d %>% st_as_sf(coords=c('est_x','est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+  bbox <- st_bbox(projection_extent)
+
+  cog_spatial <- ggplot()+
+      geom_sf(data=coast)+
+      geom_sf(data=cog_2d_sf,aes(col=year))+
+      labs(title=paste(sppname,"Center of Gravity"),col="Year")+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+
+  out <- plot_grid(cog_spatial,cog2d_timeseries,ncol=2)
+  out
+}
 ```
 
+```{r}
+make_cog(sable_future)
+```
 
-# Hovmoller Plots
+## Hovmoller Plots
 
 Add latitude and depth bins, then plot
 
 ```{r}
-make_hov <- function(df_pred){
+make_hov <- function(modelobj){
+  
+  df_pred <- modelobj$data
   
   depthbins <- seq(-3500,0,by=100)
   latbins <- seq(30,50,by=0.5)
@@ -328,13 +409,127 @@ make_hov <- function(df_pred){
   comb <- plot_grid(p1,p2,nrow=1)
   comb
 }
+```
 
+```{r}
 make_hov(sable_future)
 ```
 
+## Modeled Environmental Relationships
 
-## Abundance by Time by Latitude
+```{r}
+make_env <- function(modelobj){
+  df <- modelobj$data
+  f <- modelobj$formula %>% as.character() %>% pluck(3)
+  meanhab <- mean(df$prop_hard_mixed)
+  meant <- mean(df$mean_temp_roms_30_norm)
+  meano <- mean(df$mean_oxygen_roms_30_norm)
+  meanlat <- mean(df$latitude)
+  meanlon <- mean(df$longitude)
+  
+  if(grepl('prop_hard_mixed',f)){
+    habdf <- tibble(prop_hard_mixed=seq(0,1,length.out=100),year=2000,
+                        mean_temp_roms_30_norm=meant,mean_oxygen_roms_30_norm=meano,
+                    longitude=meanlon,latitude=meanlat)
+    phab <- predict(modelobj,newdata=habdf,se_fit=T)
+    habplot <- ggplot(phab,aes(prop_hard_mixed,exp(est),ymin=exp(est-1.96*est_se),
+                               ymax=exp(est+1.96*est_se)))+
+      geom_line()+geom_ribbon(alpha=0.5)+
+      labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")
+  } else{habplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
+      labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")}
+  
+  
+  if(grepl('mean_temp',f)){
+    tdf <- tibble(mean_temp_roms_30_norm=seq(min(df$mean_temp_roms_30_norm)+0.2,max(df$mean_temp_roms_30_norm)-0.2,length.out=100),year=2000,
+                        prop_hard_mixed=meanhab,mean_oxygen_roms_30_norm=meano,
+                    longitude=meanlon,latitude=meanlat)
+    pt <- predict(modelobj,newdata=tdf,se_fit=T)
+    tplot <- ggplot(pt,aes(mean_temp_roms_30_norm,exp(est),ymin=exp(est-1.96*est_se),
+                               ymax=exp(est+1.96*est_se)))+
+      geom_line()+geom_ribbon(alpha=0.5)+
+      labs(title="Temperature",x="Normalized T",y="CPUE")
+  }else{tplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
+      labs(title="Temperature",x="Normalized T",y="CPUE")}
+  
+  
+  if(grepl('mean_oxygen',f)){
+    odf <- tibble(mean_oxygen_roms_30_norm=seq(min(df$mean_oxygen_roms_30_norm)+0.2,max(df$mean_oxygen_roms_30_norm)-0.2,length.out=100),year=2000,
+                        prop_hard_mixed=meanhab,mean_temp_roms_30_norm=meant,
+                    longitude=meanlon,latitude=meanlat)
+    po <- predict(modelobj,newdata=odf,se_fit=T)
+    oplot <- ggplot(po,aes(mean_oxygen_roms_30_norm,exp(est),ymin=exp(est-1.96*est_se),
+                               ymax=exp(est+1.96*est_se)))+
+      geom_line()+geom_ribbon(alpha=0.5)+
+      labs(title="Oxygen",x="Normalized Oxygen",y="CPUE")
+  }else{oplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
+      labs(title="Oxygen",x="Normalized Oxygen",y="CPUE")}
+  out <- plot_grid(habplot,tplot,oplot,nrow=1)
+  out
+}
+```
 
+```{r}
+make_env(sdms %>% pluck('sablefish','model',1))
+```
 
+## All Together
 
-## Abundance by Time by Depth
+```{r}
+save_projection_plots <- function(modelobj,savedir=here::here('plots')){
+  # make projection
+  projection <- make_predictions(modelobj)
+  
+  # maps
+  # historical average cpue
+  baseline_cpue <- map_year(projection,yr_vec=1980:2010)
+  # 2050 and 2100 relative to baseline
+  diff2050 <- make_comparison_map(projection,yr=2050)
+  diff2100 <- make_comparison_map(projection,yr=2100)
+  
+  # index of abundance, center of gravity, hovmoller plots
+  ind <- make_index(projection)
+  cog <- make_cog(projection)
+  hov <- make_hov(projection)
+  
+  # environmental relationships
+  env_rels <- make_env(modelobj)
+  
+  # save everything to file
+  dir.create(savedir)
+  ggsave(filename=paste0(savedir,'/baseline_cpue.png'),baseline_cpue)
+  ggsave(filename=paste0(savedir,'/diff2050.png'),diff2050)
+  ggsave(filename=paste0(savedir,'/diff2100.png'),diff2100)
+  ggsave(filename=paste0(savedir,'/ind.png'),ind)
+  ggsave(filename=paste0(savedir,'/cog.png'),cog)
+  ggsave(filename=paste0(savedir,'/hov.png'),hov)
+  ggsave(filename=paste0(savedir,'/environmental_affiinities.png'),env_rels)
+  
+  #
+  print("Plots saved")
+}
+```
+
+```{r,fig.width=8,fig.height=8}
+save_projection_plots(sable_model,savedir=here::here('plots','sablefish hadl 8'))
+save_projection_plots(sable_model,savedir=here::here('plots','sablefish hadl 8'))
+
+# two for canary
+canary_model1 <- sdms %>% pluck('canary rockfish','model',1)
+canary_model8 <- sdms %>% pluck('canary rockfish','model',8)
+save_projection_plots(canary_model1,savedir=here::here('plots','canary hadl 1'))
+save_projection_plots(canary_model8,savedir=here::here('plots','canary hadl 8'))
+
+#two for shortspine
+shortspine_model1 <- sdms %>% pluck('shortspine thornyhead','model',1)
+shortspine_model8 <- sdms %>% pluck('shortspine thornyhead','model',8)
+save_projection_plots(shortspine_model1,savedir=here::here('plots','shortspine hadl 1'))
+save_projection_plots(shortspine_model8,savedir=here::here('plots','shortspine hadl 8'))
+
+#two for darkblotched
+dark_model1 <- sdms %>% pluck('darkblotched rockfish','model',1)
+dark_model8 <- sdms %>% pluck('darkblotched rockfish','model',8)
+save_projection_plots(dark_model1,savedir=here::here('plots','darkblotched hadl 1'))
+save_projection_plots(dark_model8,savedir=here::here('plots','darkblotched hadl 8'))
+```
+
