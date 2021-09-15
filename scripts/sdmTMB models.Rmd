@@ -36,14 +36,35 @@ rmarkdown::render(here::here('scripts','sdmTMB data and functions.Rmd'),quiet=TR
 
 Using the functions in the above script, run some sdmTMB models, while varying the species and wiggliness of relationships between the species and physical habitats (substrate, temperature, and bottom oxygen).
 
-## Set Up Model Table
+For each species, we run 8 models, and also perform 2-fold cross-validation to obtain a measure of model fit.
 
-We start with four species: sablefish, shortspine thornyhead, darkblotched rockfish, and (trying) canary rockfish
+## Set Up Models
+
+For each species, we set up the 8 models, then run them. We then run cross-validation and save the total (sum) log-likelihood of the witheld test set.
 
 ```{r}
-sdmTMB_models <- crossing(spp=c("sablefish", "shortspine thornyhead","darkblotched rockfish","canary rockfish"),spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
-  mutate(model_num=row_number())
-sdmTMB_models
+model_species <- function(spp){
+  models_to_run <- crossing(spp,spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
+    mutate(model_num=row_number())
+  out <- models_to_run %>% 
+    # fit the models
+    mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>% 
+    # find the log likelihood
+    mutate(loglik=purrr::pmap_dbl(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm)) %>% 
+    # assign a relative model weight
+    mutate(model_weight=1/(loglik/max(loglik)))
+  
+  out
+}
+```
+
+Test it out
+```{r}
+shortspine_models <- model_species('shortspine thornyhead')
+glimpse(shortspine_models)
+# sdmTMB_models <- crossing(spp=c("sablefish", "shortspine thornyhead","darkblotched rockfish","canary rockfish"),spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
+#   mutate(model_num=row_number())
+# sdmTMB_models
 ```
 
 ## Call sdmTMB

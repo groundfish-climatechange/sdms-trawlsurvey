@@ -257,17 +257,23 @@ make_comparison_map <- function(modelobj,yr=2050){
   both <- basepred %>% 
     left_join(newpred,by=c('X','Y')) %>% 
     mutate(diffpred=est_comp-est)
+  
+  bbox=st_bbox(projection_extent)
+  
   out<-ggplot(coast)+
         geom_sf()+
         # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
         # scale_color_viridis_c()+
         geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
-        scale_fill_viridis_c(direction = -1)+
+        scale_fill_gradient2(low = "red", mid = "white", high = "purple")+
+        # scale_fill_viridis_c(direction = -1)+
         xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
         labs(x="",y="",fill="Difference")
   out
 }
 make_comparison_map(sable_future,yr=2050)
+
+make_comparison_map(sdms %>% pluck('darkblotched rockfish','model',8) %>% make_predictions(),yr=2050)
 ```
 
 
@@ -511,8 +517,10 @@ save_projection_plots <- function(modelobj,savedir=here::here('plots')){
 ```
 
 ```{r,fig.width=8,fig.height=8}
-save_projection_plots(sable_model,savedir=here::here('plots','sablefish hadl 8'))
-save_projection_plots(sable_model,savedir=here::here('plots','sablefish hadl 8'))
+sable_model1 <- sdms %>% pluck('sablefish','model',1)
+sable_model8 <- sdms %>% pluck('sablefish','model',8)
+save_projection_plots(sable_model1,savedir=here::here('plots','sablefish hadl 1'))
+save_projection_plots(sable_model8,savedir=here::here('plots','sablefish hadl 8'))
 
 # two for canary
 canary_model1 <- sdms %>% pluck('canary rockfish','model',1)

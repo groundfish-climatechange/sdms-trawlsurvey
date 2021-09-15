@@ -46,7 +46,7 @@ trawl_locs <- read_rds(here::here('data','trawl','trawlID.rds')) %>%
   # join the roms_time reference
   left_join(roms_time) %>% 
   # select the variable we'll use to match
-  select(station,date,time,lon_trawl,lat_trawl,depth_trawl,realTrawl)
+  dplyr::select(station,date,time,lon_trawl,lat_trawl,depth_trawl,realTrawl)
 
 trawl <- trawl %>% 
   left_join(trawl_locs,by=c("date"="date","longitude_dd"="lon_trawl","latitude_dd"="lat_trawl","depth"="depth_trawl"))
@@ -57,7 +57,7 @@ Filter the trawl survey data to fit within the time frame for which we have ROMS
 ```{r}
 trawl <- trawl %>%
   filter(realTrawl==1) %>% 
-  select(-realTrawl) %>% 
+  dplyr::select(-realTrawl) %>% 
   # rename time to something more useful
   rename(roms_hindcast_day=time)
 glimpse(trawl)
@@ -187,7 +187,7 @@ prepare_species <- function(dat,spp){
 
 Try an example for sablefish
 
-```{r}
+```{r,eval=F}
 sablefish_dat <- prepare_species(trawl_roms_utm,spp="sablefish")
 glimpse(sablefish_dat)
 ```
@@ -197,7 +197,9 @@ glimpse(sablefish_dat)
 Write a function that runs sdmTMB. It wil call the previous function to make the appropriate species data. For now, the environmental variable names are not generic (always `mean_temp_roms_30_norm` and `mean_oxygen_roms_30_norm`)
 
 ```{r}
-run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3){
+# nknots=400;use_depth=F;time_vary=F;spatial_field=T;hab_spline=F;env_spline=F;spline_k=3
+# rm(time_varying,spatial_field,hab_spline,env_spline,spline_k,modeldat,spde,formula,substrate,enviro,dat,spp,time_formula,time,test_set,nknots,test_cv,use_depth,time_vary)
+run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -229,7 +231,100 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   }
   
   time_formula = "~ -1"
-  if(time_varying) {
+  if(time_vary) {
+    time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
+    time_varying = as.formula(time_formula)
+    time = "year"
+  } else {
+    formula = paste0(formula, " + ", substrate, " + ", enviro)
+    time_varying = NULL
+    time = "year"
+  }
+  
+  # fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned
+  # set.seed(41389) # for reproducibility
+  # test_set = sample(1:nrow(modeldat), size = round(0.1*nrow(modeldat)), replace=FALSE)
+  # modeldat$fold = 1
+  # modeldat$fold[test_set] = 2
+  # anisotropy off for now
+  print('running model.')
+  m <- try( sdmTMB(
+    formula = as.formula(formula),
+    time_varying = time_varying,
+    spde = spde,
+    time = time,
+    family = tweedie(link = "log"),
+    data = modeldat,
+    anisotropy = FALSE,
+    spatial_only = T,
+    #extra_time argument necessary for prediction?
+    extra_time=1980:2100,
+    control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
+  ),
+  silent=F)
+
+
+  # predicted values for the 2nd fold (test)
+  # m_cv$data$cv_predicted[which(m_cv$data$cv_fold==2)]
+  # log likelihood values for the 2nd fold (test)
+  # m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)]
+
+    # sum(m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)])
+  
+  # if(class(m)!="try-error") {
+  #   write_rds(m, file=here::here('model output',
+  #                                paste0(spp,'.rds')))
+  # }
+  if(class(m)=="try-error"){
+    print(paste("Error."))
+  }else{
+    print(paste("Model for",spp,"complete."))
+  }
+
+  # return(m)
+  return(m)
+
+}
+```
+
+```{r,eval=F}
+test <- run_sdmTMB(dat=trawl_roms_utm,spp="sablefish",hab_spline = F,env_spline = F)
+```
+
+##CV formula
+
+```{r}
+run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
+  # filter data for species
+  modeldat <- prepare_species(dat,spp=spp)
+  
+  # make spde
+  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
+                   cutoff = 20)
+  
+  # model formula
+  formula <- paste0("cpue_kg_km2 ~ ")
+  
+  # substrate relationship
+  substrate <- paste("prop_hard_mixed + I(prop_hard_mixed^2)")
+  #wiggly habitat relationship?
+  substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
+                      substrate)
+  
+  # make the environmental effects
+  enviro <- paste("mean_temp_roms_30_norm + I(mean_temp_roms_30_norm^2) + mean_oxygen_roms_30_norm + I(mean_oxygen_roms_30_norm^2)")
+  # wiggly environmental relationships?
+  enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
+                                      "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
+                   enviro)
+  # if depth effect, add to model formla
+  if(use_depth) {
+    formula = paste0(formula, " + depth + I(depth^2)")
+  }
+  
+  time_formula = "~ -1"
+  
+  if(time_vary) {
     time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
     time_varying = as.formula(time_formula)
     time = "year"
@@ -243,64 +338,45 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_varying=F,spatial_fie
   set.seed(41389) # for reproducibility
   test_set = sample(1:nrow(modeldat), size = round(0.1*nrow(modeldat)), replace=FALSE)
   modeldat$fold = 1
-  modeldat$fold[test_set] = 2
-  # anisotropy off for now
-  m <- try( sdmTMB(
-    formula = as.formula(formula),
-    time_varying = time_varying,
-    spde = spde,
-    time = time,
-    family = tweedie(link = "log"),
-    data = modeldat,
-    anisotropy = FALSE,
-    spatial_only = T,
-    #extra_time argument necessary for prediction?
-    extra_time=1980:2100,
-    map_rf=ifelse(spatial_field,F,T)
-  ),
-  silent=TRUE)
+  modeldat$fold[test_set] = 2 
+  
+  print('running 2-fold CV.')
   
   m_cv <- try( sdmTMB_cv( 
     formula = as.formula(formula),
+    k_folds=2,
+    parallel = FALSE,
+    fold_ids = modeldat$fold,
     time_varying = time_varying,
     spde = spde,
-    k_folds = 2,
-    fold_ids = "fold",
     time = time,
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = FALSE,
     spatial_only = T,
     #extra_time argument necessary for prediction?
-    extra_time=1980:2100,
-    map_rf=ifelse(spatial_field,F,T)
-  ), 
-  silent=TRUE)
-
-  # predicted values for the 2nd fold (test)
-  m_cv$data$cv_predicted[which(m_cv$data$cv_fold==2)]
-  # log likelihood values for the 2nd fold (test)
-  m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)]
-  
-  total_pred_ll = sum(m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)])
-  
-  # if(class(m)!="try-error") {
-  #   write_rds(m, file=here::here('model output',
-  #                                paste0(spp,'.rds')))
-  # }
-  if(class(m)=="try-error"){
-    print(paste("Error."))
-  }else{
-    print(paste("Model for",spp,"complete."))
+    # extra_time=1980:2100,
+    control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
+  ),
+  silent=T)
+  if(class(m_cv)=='try-error'){
+    print(paste('Error.'))
+  } else{
+    # tem <- m_cv %>% pluck('data')
+    # print(paste('data is class',class(tem)))
+    total_pred_ll = m_cv %>% 
+      pluck('data') %>% 
+      dplyr::filter(cv_fold==2) %>% 
+      pluck('cv_loglik') %>% 
+      sum()
+    if(return_what=='model') return(m_cv)
+    else return(total_pred_ll)
   }
-  # return(m)
-  return(list(m,m_cv))
-
 }
 ```
 
-```{r}
-test <- run_sdmTMB(trawl_roms_utm,spp="sablefish")
+```{r,eval=F}
+test_cv <- run_sdmTMB_cv(dat=trawl_roms_utm,spp='sablefish')
 ```
 
 
