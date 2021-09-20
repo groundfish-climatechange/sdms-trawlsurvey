@@ -17,6 +17,10 @@ library(sf)
 library(here)
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
+
+# for parallel processing
+library(future)
+plan(multisession)
 ```
 
 # Purpose
@@ -47,38 +51,75 @@ model_species <- function(spp){
   models_to_run <- crossing(spp,spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
     mutate(model_num=row_number())
   out <- models_to_run %>% 
-    # fit the models
-    mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>% 
-    # find the log likelihood
-    mutate(loglik=purrr::pmap_dbl(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm)) %>% 
-    # assign a relative model weight
-    mutate(model_weight=1/(loglik/max(loglik)))
+    mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>%
+    mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
   
+  model_weights <- try(sdmTMB_stacking(out$model_cv))
+  if(class(model_weights)=='try-error'){
+    print(paste('Error in model stacking.'))
+    out$weight=NA
+  } else{
+    out$weight=model_weights
+  }
+    # mutate(stack_weight=sdmTMB_stacking(model_cv))
+    # fit the models 
+    # find the log likelihood
+    # mutate(loglik=purrr::pmap_dbl(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm)) %>% 
+    # # assign a relative model weight
+    # mutate(model_weight=1/(loglik/max(loglik)))
   out
 }
 ```
 
 Test it out
-```{r}
-shortspine_models <- model_species('shortspine thornyhead')
-glimpse(shortspine_models)
+```{r, eval=F}
+test_models <- model_species('longspine thornyhead')
+# glimpse(shortspine_models)
 # sdmTMB_models <- crossing(spp=c("sablefish", "shortspine thornyhead","darkblotched rockfish","canary rockfish"),spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
 #   mutate(model_num=row_number())
 # sdmTMB_models
 ```
 
+
 ## Call sdmTMB
 
-Here we actually run the models.
+Here we actually run the models, for a vector of species.
 
 ```{r}
-sdmTMB_models <- sdmTMB_models %>% 
-  mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
+plan("future::multisession")
+# top 10 species by mean cpue in the trawl survey (this is a totally random criterion)
 
-#test model
-test_model <- sdmTMB_models %>% 
-  slice(6) %>% 
-  mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
+species <- trawl_roms_utm %>% 
+  filter(species != "pacific hake",species != "dungeness crab") %>% 
+  dplyr::group_by(species) %>% 
+  summarise(meancpue=mean(cpue_kg_km2,na.rm=T)) %>% 
+  ungroup() %>%
+  slice_max(order_by = meancpue,n=10)
+species
+```
+
+Run models and save cross-validation model stacking weights
+
+```{r}
+plan("future::multisession")
+for(i in 1:length(species$species)){
+  s <- species$species[i]
+  m <- model_species(s)
+  write_rds(m,here::here('model output',paste(s,'models.rds')))
+  print(paste(s,'models finished'))
+}
+```
+
+
+```{r}
+# OLD CODE
+# sdmTMB_models <- sdmTMB_models %>% 
+#   mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
+# 
+# #test model
+# test_model <- sdmTMB_models %>% 
+#   slice(6) %>% 
+#   mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
 ```
 
 Save model outputs as an .rds

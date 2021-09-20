@@ -11,7 +11,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-# devtools::install_github("pbs-assess/sdmTMB")
+# remotes::install_github("pbs-assess/sdmTMB",ref="stacking")
 library(sdmTMB)
 library(tidyverse)
 library(lubridate)
@@ -294,6 +294,8 @@ test <- run_sdmTMB(dat=trawl_roms_utm,spp="sablefish",hab_spline = F,env_spline 
 ##CV formula
 
 ```{r}
+library(future)
+plan(multisession)
 run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
@@ -345,7 +347,7 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
   m_cv <- try( sdmTMB_cv( 
     formula = as.formula(formula),
     k_folds=2,
-    parallel = FALSE,
+    parallel = TRUE,
     fold_ids = modeldat$fold,
     time_varying = time_varying,
     spde = spde,
@@ -376,7 +378,7 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
 ```
 
 ```{r,eval=F}
-test_cv <- run_sdmTMB_cv(dat=trawl_roms_utm,spp='sablefish')
+test_cv <- run_sdmTMB_cv(dat=trawl_roms_utm,spp='sablefish',return_what = 'model')
 ```
 
 
