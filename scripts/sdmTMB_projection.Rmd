@@ -20,6 +20,9 @@ library(here)
 library(vista)
 library(cowplot)
 library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -36,6 +39,11 @@ plot_theme <-   theme_minimal()+
 theme_set(plot_theme)
 ```
 
+```{r}
+# set up parallel processing
+future::plan(sequential)
+future::plan(multisession,workers=4)
+```
 
 ```{r}
 # spatial background map
@@ -50,6 +58,8 @@ coast <- ne_states(country='United States of America',returnclass = 'sf') %>%
 # Purpose
 
 Using species distribution models fit to hindcast ROMS data, project future species distributions using projected ROMS data. The models were fitted using `sdmTMB` in script `sdmTMB models.Rmd`. We now take those fitted models and apply them to the projected oceanographic data.
+
+For each species, we fit 8 models to the trawl survey data, assuming different functional forms relating environmental and habitat variables to species' density. In the projections, we will take advantage of model ensembles, weighting predictions based on the relative evidence for each model expressed through likelihood and established using 2-fold cross-validation.
 
 # Load Fitted Models and Projected ROMS
 
@@ -70,14 +80,12 @@ ggplot()+
 
 ## Load Models
 
-```{r}
-sdms <- read_rds(here::here('model output','four species sdmTMB test.rds')) %>% 
-  group_split(spp) %>% 
-  # split the nested data frame of models into a list of 4 (one list of models per species)
-  set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
+Load models for a sample species.
 
-##
-sable_model <- sdms %>% pluck('sablefish','model',8)
+```{r}
+## dover sole models
+dover_models <- read_rds(here::here('model output','dover sole models.rds'))
+names(dover_models)
 ```
 
 ## Load Projected ROMS data
@@ -145,14 +153,14 @@ hab <- hab %>%
 In order to use the fitted models to project on ROMS data, we have to make sure the models have all the variables that were used in model fitting. Working with our example model for now...
 
 ```{r}
-sable_model$formula
+dover_models %>% pluck('model',1) %>% .$formula
 ```
 
 This model used proportion hard substrate, along with 30-day lagged mean (normalized) temperature and oxygen. We need to use the same normalization to transform the projected variables.
 
 ## Prediction Function
 
-Function to make predictions for one model. For now we only use the "midpoint" environmental data (i.e., the 30 day lag from July 31st)
+Function to make predictions for one model. For now we only use the "midpoint" environmental data (i.e., the 30 day lag from July 31st).
 
 ```{r}
 # give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', or 'ipsl'
@@ -190,20 +198,90 @@ make_predictions <- function(modelobj,gcm="hadl"){
   yrs <- sort(unique(newdata$year))
   # now we can make the predictions
   predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=T,extra_time=yrs)
-  #Error: Some new time elements were found in `newdata`. For now, make sure only time elements from the original dataset are present. If you would like to predict on new time elements, see the `extra_time` argument in `?sdmTMB:::predict.sdmTMB`.
+  
+  predicted_cpue_km2
 }
 ```
 
 Example
 
 ```{r}
-sable_future <- make_predictions(sable_model)
-glimpse(sable_future$data)
+dover_future1 <- make_predictions(dover_models %>% pluck('model',1))
+glimpse(dover_future1$data)
 ```
+
+## Ensemble Predictions
+
+To create ensemble predictions, we calculate predictions for each species' model separately, then weight them using the weights established in model fitting (see `sdmTMB::sdmTMB_stacking()`).
+
+```{r}
+# this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
+ensemble_predictions <- function(model_df,gcm='hadl'){
+  
+  # use the first model in the list to pull out the data
+  original_model_data <- model_df %>% pluck('model',1,'data')
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data for the chosen gcm
+  newdata <- roms %>% 
+    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
+    left_join(hab,by=c("lat","lon")) %>% 
+    drop_na() %>% 
+    dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
+  
+  temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
+    set_names('temperature') %>% 
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% dplyr::select(contains('bt')) %>% 
+    set_names('oxygen') %>% 
+    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+
+  newdata <- newdata %>% 
+    bind_cols(temperature) %>% 
+    bind_cols(oxygen) %>% 
+    dplyr::select(-temperature,-oxygen) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  
+  # model weights
+  w <- model_df %>% pluck('weight')
+  w <- ifelse(all(is.na(w)),rep(1,length(w)),w)
+  
+  model_list <- model_df %>% pluck('model')
+  
+  # make the predictions for all 8 models
+  all_predictions <- purrr::map2_df(model_list,w,function(m,weight){
+    preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs) %>% 
+      mutate(weight=weight)
+    preds
+  })
+  ens_preds <- all_predictions %>% 
+    group_by(year,longitude,latitude,lat,lon) %>% 
+    summarise(ens_est=weighted.mean(est,weight)) %>% 
+    ungroup()
+  
+  ens_preds
+}
+```
+
+```{r}
+dover_ens_preds <- ensemble_predictions(dover_models)
+glimpse(dover_ens_preds)
+```
+
 
 # Plots
 
 ## Annual Map
+
+Using the output from ensembling, make some maps
 
 ```{r}
 # pretty grid
@@ -211,13 +289,13 @@ gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_s
   st_intersection(projection_extent)
 gr_xy <- st_coordinates(gr)
 
-map_year <- function(modelobj,yr_vec=c(2000),return_pred_df=F){
+map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F){
   # scale for the legend, common within species
-  scl <- c(0,quantile(exp(modelobj$data$est),0.99))
-  df <- modelobj$data %>% 
+  scl <- c(0,quantile(exp(model_ens$ens_est),0.99))
+  df <- model_ens %>% 
     filter(year%in%yr_vec) %>% 
     group_by(longitude,latitude) %>% 
-    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    summarise(est=mean(ens_est,na.rm=T) %>% exp()) %>% 
     # rescale super large positive outliers for mapping purposes
     mutate(est=ifelse(est>scl[2],scl[2],est))
   # match nearest neighbors from predictions to grid
@@ -230,18 +308,18 @@ map_year <- function(modelobj,yr_vec=c(2000),return_pred_df=F){
   if(return_pred_df) {out <- gr_pred}
   
   else{
-      out<-ggplot(coast)+
-        geom_sf()+
-        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
-        # scale_color_viridis_c()+
-        geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
-        scale_fill_viridis_c(limits=scl)+
-        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
-        labs(x="",y="",fill="CPUE")
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      scale_fill_viridis_c(limits=scl)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')
   }
   out
 }
-map_year(sable_future,yr_vec=(c(2010)))
+map_year(dover_ens_preds,yr_vec=(c(2010)))
 ```
 
 ## Difference Map
@@ -250,9 +328,9 @@ Compare a map for a given year to the historical average (1980-2010)
 
 ```{r}
 #1980-2010 baseline
-make_comparison_map <- function(modelobj,yr=2050){
-  basepred <- map_year(modelobj,yr_vec=1980:2010,return_pred_df = T)
-  newpred <- map_year(modelobj,yr_vec=yr,return_pred_df = T) %>% 
+make_comparison_map <- function(model_ens,yr=2050){
+  basepred <- map_year(model_ens,yr_vec=1980:2010,return_pred_df = T)
+  newpred <- map_year(model_ens,yr_vec=yr,return_pred_df = T) %>% 
     mutate(est_comp=est) %>% dplyr::select(-est)
   both <- basepred %>% 
     left_join(newpred,by=c('X','Y')) %>% 
@@ -271,30 +349,61 @@ make_comparison_map <- function(modelobj,yr=2050){
         labs(x="",y="",fill="Difference")
   out
 }
-make_comparison_map(sable_future,yr=2050)
-
-make_comparison_map(sdms %>% pluck('darkblotched rockfish','model',8) %>% make_predictions(),yr=2050)
+make_comparison_map(dover_ens_preds,yr=2050)
 ```
 
 
 ## Index of Abundance
 
 ```{r}
-make_index <- function(modelobj,gcm="hadl"){
-  sppname <- unique(modelobj$fit_obj$data$species) %>% tools::toTitleCase()
-  ind <- modelobj %>% get_index()
-  p <- ind %>% 
-    ggplot(aes(year,est/1000,ymax=upr/1000,ymin=lwr/1000))+
+make_index <- function(model_df){
+  future::plan(multisession)
+  sppname <- unique(model_df$spp) %>% tools::toTitleCase()
+    # model weights
+  w <- model_df %>% pluck('weight')
+  if(all(is.na(w))) w <- rep(1,nrow(model_df))
+  tic('making predictions')
+  predictions_list <- model_df %>% pluck('model') %>% 
+    furrr::future_map(make_predictions) 
+  toc()
+  
+  tic('making indices')
+  
+  indices <- predictions_list %>% furrr::future_map_dfr(get_index)
+  toc()
+  
+  nyr <- length(unique(indices$year))
+  ws <- rep(w,each=nyr)
+  
+  # combined index
+  ind <- indices %>%
+    mutate(weight=ws) %>% 
+    group_by(year) %>% 
+    summarise(w.est=weighted.mean(est,w=weight)) %>% 
+    ungroup()
+  future::plan(sequential)
+  
+  p <- ind %>%
+    # ggplot(aes(year,est/1000,ymax=upr/1000,ymin=lwr/1000))+
+    ggplot(aes(year,w.est/1000))+
     geom_line()+
-    geom_ribbon(fill='red',alpha=0.5)+
+    # geom_ribbon(fill='red',alpha=0.5)+
     scale_x_continuous(expand=c(0,2))+
-    labs(x="Year",y="Index of Abundance",title=paste(sppname, "Abundance Index"))
+    labs(x="Year",y="Index of Abundance",title=paste(sppname, "Ensemble Abundance Index"))
   p
 }
 ```
 
 ```{r}
-make_index(sable_future)
+# make_index(dover_models)
+# x<- dover_models %>% pluck('model') %>% 
+#     purrr::map(make_predictions)
+# tic()
+# future::plan(multisession)
+# y <- x %>% furrr::future_map(get_index)
+# toc()
+# future::plan(sequential)
+make_index(dover_models)
 ```
 
 ## Center of Gravity
@@ -302,38 +411,69 @@ make_index(sable_future)
 Plot center of gravity over time
 
 ```{r}
-make_cog <- function(modelobj,gcm="hadl"){
-  sppname <- unique(modelobj$fit_obj$data$species) %>% tools::toTitleCase()
-  cog <- modelobj %>% 
-    get_cog() %>% 
-    dplyr::select(-max_gradient,-bad_eig)
-
+make_cog <- function(model_df){
+  future::plan(multisession)
+  
+  sppname <- unique(model_df$spp) %>% tools::toTitleCase()
+  
+  # model weights
+  w <- model_df %>% pluck('weight')
+  if(all(is.na(w))) w <- rep(1,nrow(model_df))
+  
+  tic('making predictions')
+  predictions_list <- model_df %>% pluck('model') %>% 
+    furrr::future_map(make_predictions) 
+  toc()
+  
+  tic('making cogs')
+  
+  cogs <- predictions_list %>% furrr::future_map_dfr(get_cog)
+  toc()
+  
+  nyr <- length(unique(cogs$year))
+  ws <- rep(w,each=nyr)
+  
+  
 # reorganize output (X and Y coords)
-  cog_x <- cog %>% filter(coord=="X")%>% 
+  cog_x <- cogs %>% 
+    filter(coord=="X")%>% 
     rename_with(~paste0(.,"_x"),all_of(c('est','lwr','upr','se'))) %>% 
-    dplyr::select(-coord)
-  cog_y <- cog %>% filter(coord=="Y") %>% 
-    rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se'))) %>% 
-    dplyr::select(-coord)
+    dplyr::select(-coord) %>% 
+    # add weights
+    mutate(weight=ws) %>% 
+    group_by(year) %>% 
+    summarise(w.est_x=weighted.mean(est_x,w=weight)) %>% 
+    ungroup()
+  cog_y <- cogs %>% 
+    filter(coord=="Y") %>% 
+    rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se')))%>% 
+    dplyr::select(-coord) %>% 
+    # add weights
+    mutate(weight=ws) %>% 
+    group_by(year) %>% 
+    summarise(w.est_y=weighted.mean(est_y,w=weight)) %>% 
+    ungroup()
   cog_2d <- cog_x %>% left_join(cog_y,by='year')
   
   cog_x_plot <- cog_2d %>% 
-    ggplot(aes(year,est_x,ymax=upr_x,ymin=lwr_x))+
+    # ggplot(aes(year,w.est_x,ymax=upr_x,ymin=lwr_x))+
+    ggplot(aes(year,w.est_x))+
     geom_line()+
-    geom_ribbon(fill='red',alpha=0.5)+
+    # geom_ribbon(fill='red',alpha=0.5)+
     scale_x_continuous(expand=c(0,5))+
     labs(x="Year",y="Eastings (km)",title="Center of Gravity, X")
   
   cog_y_plot <- cog_2d %>% 
-    ggplot(aes(year,est_y,ymax=upr_y,ymin=lwr_y))+
+    # ggplot(aes(year,w.est_y,ymax=upr_y,ymin=lwr_y))+
+    ggplot(aes(year,w.est_y))+
     geom_line()+
-    geom_ribbon(fill='red',alpha=0.5)+
+    # geom_ribbon(fill='red',alpha=0.5)+
     scale_x_continuous(expand=c(0,5))+
     labs(x="Year",y="Northings (km)",title="Center of Gravity, Y")
   
   cog2d_timeseries <- plot_grid(cog_x_plot,cog_y_plot,nrow=2)
   
-  cog_2d_sf <- cog_2d %>% st_as_sf(coords=c('est_x','est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
+  cog_2d_sf <- cog_2d %>% st_as_sf(coords=c('w.est_x','w.est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
 
   bbox <- st_bbox(projection_extent)
 
@@ -349,7 +489,7 @@ make_cog <- function(modelobj,gcm="hadl"){
 ```
 
 ```{r}
-make_cog(sable_future)
+make_cog(dover_models)
 ```
 
 ## Hovmoller Plots
@@ -418,7 +558,7 @@ make_hov <- function(modelobj){
 ```
 
 ```{r}
-make_hov(sable_future)
+make_hov(dover_future1)
 ```
 
 ## Modeled Environmental Relationships
@@ -476,7 +616,7 @@ make_env <- function(modelobj){
 ```
 
 ```{r}
-make_env(sdms %>% pluck('sablefish','model',1))
+make_env(dover_models %>% pluck('model',1))
 ```
 
 ## All Together
