@@ -86,9 +86,7 @@ test_models <- model_species('longspine thornyhead')
 Here we actually run the models, for a vector of species.
 
 ```{r}
-plan("future::multisession")
 # top 10 species by mean cpue in the trawl survey (this is a totally random criterion)
-
 species <- trawl_roms_utm %>% 
   filter(species != "pacific hake",species != "dungeness crab") %>% 
   dplyr::group_by(species) %>% 
@@ -101,7 +99,11 @@ species
 Run models and save cross-validation model stacking weights
 
 ```{r}
-plan("future::multisession")
+
+```
+
+```{r}
+plan(multisession)
 for(i in 1:length(species$species)){
   s <- species$species[i]
   m <- model_species(s)
