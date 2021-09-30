@@ -665,7 +665,7 @@ make_env <- function(modelobj){
 ```
 
 ```{r,eval=F}
-make_env(dover_models %>% pluck('model',5))
+make_env(dover_models %>% pluck('model',1))
 ```
 
 ## All Together

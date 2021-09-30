@@ -67,6 +67,7 @@ sable2100 <- map_year(sable_ens,yr_vec=2100,return_pred_df=T)%>% rename(sable=es
 ls2100 <- map_year(ls_ens,yr_vec=2100,return_pred_df=T)%>% rename(ls=est)
 ```
 
+
 # Maps
 
 ```{r}
@@ -160,5 +161,30 @@ all_loc %>%
   theme(legend.position=c(0.8,0.75),
         legend.background = element_rect(color='black'))+
   labs(x="Year",y="Index of Collocation",color="Species Pair")
+```
+
+
+# Dover sole inter-model comparison
+
+Index of abundance
+IPSL vs. Hadley vs. GFDL
+
+```{r}
+dover_index_ipsl <- make_index(dover_models,gcm="ipsl")
+dover_index_hadl <- make_index(dover_models,gcm="hadl")
+dover_index_gfdl<- make_index(dover_models,gcm="gfdl")
+
+dover_indices <- dover_index_ipsl$data %>% 
+  rename(IPSL=w.est) %>% 
+  left_join(dover_index_hadl$data %>% rename(Hadley=w.est)) %>% 
+  left_join(dover_index_gfdl$data %>% rename(GFDL=w.est))
+  
+dover_indices %>% 
+  pivot_longer(IPSL:GFDL,names_to="model",values_to='abun') %>% 
+  ggplot(aes(x=year,abun/10000,col=model))+
+  geom_line(size=1.5)+
+  theme(legend.position=c(0.1,0.25),
+        legend.background = element_rect(color='black'))+
+  labs(x="Year",y="Ensemble Index of Abundance",color="Model")
 ```
 
