@@ -82,7 +82,7 @@ ggplot()+
 
 Load models for a sample species.
 
-```{r}
+```{r, eval=F}
 ## dover sole models
 dover_models <- read_rds(here::here('model output','dover sole models.rds'))
 names(dover_models)
@@ -152,7 +152,7 @@ hab <- hab %>%
 
 In order to use the fitted models to project on ROMS data, we have to make sure the models have all the variables that were used in model fitting. Working with our example model for now...
 
-```{r}
+```{r,eval=F}
 dover_models %>% pluck('model',1) %>% .$formula
 ```
 
@@ -205,7 +205,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
 
 Example
 
-```{r}
+```{r,eval=F}
 dover_future1 <- make_predictions(dover_models %>% pluck('model',1))
 glimpse(dover_future1$data)
 ```
@@ -263,7 +263,7 @@ ensemble_predictions <- function(model_df,gcm='hadl'){
     preds
   })
   ens_preds <- all_predictions %>% 
-    group_by(year,longitude,latitude,lat,lon) %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
     summarise(ens_est=weighted.mean(est,weight)) %>% 
     ungroup()
   
@@ -271,7 +271,7 @@ ensemble_predictions <- function(model_df,gcm='hadl'){
 }
 ```
 
-```{r}
+```{r, eval=F}
 dover_ens_preds <- ensemble_predictions(dover_models)
 glimpse(dover_ens_preds)
 ```
@@ -289,7 +289,7 @@ gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_s
   st_intersection(projection_extent)
 gr_xy <- st_coordinates(gr)
 
-map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F){
+map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
   # scale for the legend, common within species
   scl <- c(0,quantile(exp(model_ens$ens_est),0.99))
   df <- model_ens %>% 
@@ -305,7 +305,7 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F){
   
   bbox=st_bbox(projection_extent)
   
-  if(return_pred_df) {out <- gr_pred}
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
   
   else{
     out<-ggplot(coast)+
@@ -316,11 +316,16 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F){
       scale_fill_viridis_c(limits=scl)+
       xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
       labs(x="",y="",fill="CPUE",title='')
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
   }
   out
 }
+```
+
+```{r,eval=F}
 map_year(dover_ens_preds,yr_vec=(c(2010)))
 ```
+
 
 ## Difference Map
 
@@ -349,6 +354,9 @@ make_comparison_map <- function(model_ens,yr=2050){
         labs(x="",y="",fill="Difference")
   out
 }
+```
+
+```{r,eval=F}
 make_comparison_map(dover_ens_preds,yr=2050)
 ```
 
@@ -356,18 +364,18 @@ make_comparison_map(dover_ens_preds,yr=2050)
 ## Index of Abundance
 
 ```{r}
-make_index <- function(model_df){
+make_index <- function(model_df,gcm='hadl'){
   future::plan(multisession)
   sppname <- unique(model_df$spp) %>% tools::toTitleCase()
     # model weights
   w <- model_df %>% pluck('weight')
   if(all(is.na(w))) w <- rep(1,nrow(model_df))
-  tic('making predictions')
+  # tic('making predictions')
   predictions_list <- model_df %>% pluck('model') %>% 
-    furrr::future_map(make_predictions) 
-  toc()
+    furrr::future_map(make_predictions,gcm=gcm) 
+  # toc()
   
-  tic('making indices')
+  # tic('making indices')
   
   indices <- predictions_list %>% furrr::future_map_dfr(get_index)
   toc()
@@ -394,7 +402,7 @@ make_index <- function(model_df){
 }
 ```
 
-```{r}
+```{r,eval=F}
 # make_index(dover_models)
 # x<- dover_models %>% pluck('model') %>% 
 #     purrr::map(make_predictions)
@@ -411,7 +419,7 @@ make_index(dover_models)
 Plot center of gravity over time
 
 ```{r}
-make_cog <- function(model_df){
+make_cog <- function(model_df,gcm='hadl'){
   future::plan(multisession)
   
   sppname <- unique(model_df$spp) %>% tools::toTitleCase()
@@ -420,15 +428,15 @@ make_cog <- function(model_df){
   w <- model_df %>% pluck('weight')
   if(all(is.na(w))) w <- rep(1,nrow(model_df))
   
-  tic('making predictions')
+  # tic('making predictions')
   predictions_list <- model_df %>% pluck('model') %>% 
-    furrr::future_map(make_predictions) 
-  toc()
+    furrr::future_map(make_predictions,gcm=gcm) 
+  # toc()
   
-  tic('making cogs')
+  # tic('making cogs')
   
   cogs <- predictions_list %>% furrr::future_map_dfr(get_cog)
-  toc()
+  # toc()
   
   nyr <- length(unique(cogs$year))
   ws <- rep(w,each=nyr)
@@ -488,7 +496,7 @@ make_cog <- function(model_df){
 }
 ```
 
-```{r}
+```{r,eval=F}
 make_cog(dover_models)
 ```
 
@@ -497,9 +505,14 @@ make_cog(dover_models)
 Add latitude and depth bins, then plot
 
 ```{r}
-make_hov <- function(modelobj){
+make_hov <- function(model_df,gcm='hadl'){
   
-  df_pred <- modelobj$data
+  sppname <- unique(model_df$spp) %>% tools::toTitleCase()
+  gcmname <- switch(gcm,hadl="Hadley",gfdl="GFDL",ipsl = "IPSL")
+  
+  future::plan(multisession)
+  
+  df_pred <- ensemble_predictions(model_df,gcm=gcm)
   
   depthbins <- seq(-3500,0,by=100)
   latbins <- seq(30,50,by=0.5)
@@ -514,18 +527,19 @@ make_hov <- function(modelobj){
   
   outlat <- out %>% 
     group_by(year,latbin) %>% 
-    summarise(mean_cpue=mean(est,na.rm=T))
+    summarise(mean_cpue=mean(ens_est,na.rm=T))
   
   outdepth <- out %>% 
     group_by(year,depthbin) %>% 
-    summarise(mean_cpue=mean(est,na.rm=T))
+    summarise(mean_cpue=mean(ens_est,na.rm=T)) %>% 
+    filter(depthbin>-2001)
   
   p1 <- outlat %>% 
     ggplot(aes(year,latbin,fill=mean_cpue))+
     geom_tile()+
     scale_fill_gradient2(
         low = 'blue', mid = 'white', high = 'red',
-        midpoint = mean(out$est,na.rm=T))+
+        midpoint = mean(out$ens_est,na.rm=T))+
     scale_x_continuous(expand = c(0, 0))+
     scale_y_continuous(expand=c(0,0))+
     theme_classic()+
@@ -541,7 +555,7 @@ make_hov <- function(modelobj){
     geom_tile()+
     scale_fill_gradient2(
         low = 'blue', mid = 'white', high = 'red',
-        midpoint = mean(out$est,na.rm=T))+
+        midpoint = mean(out$ens_est,na.rm=T))+
     scale_x_continuous(expand = c(0, 0))+
     scale_y_continuous(expand=c(0,0),breaks = seq(-3500,0,by=300),labels=seq(-3500,0,by=300))+
     theme_classic()+
@@ -552,21 +566,36 @@ make_hov <- function(modelobj){
     theme( panel.border = element_rect(colour = "black", fill=NA, size=1))+
     labs(title="Abundance Index by Depth",x="Year",y="Depth")
   
+  # map for latitude reference?
+  # outmap<-ggplot(coast %>% st_transform(4326))+
+  #     geom_sf()+
+  #     # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+  #     # scale_color_viridis_c()+
+  #     # geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+  #     # scale_fill_viridis_c(limits=scl)+
+  #     xlim(-125,-117)+ylim(30,50)+
+  #     labs(title='')
+  
   comb <- plot_grid(p1,p2,nrow=1)
-  comb
+  titlegg <- ggdraw() +
+    draw_label(paste(sppname,gcmname))
+  plot_grid(titlegg,comb,ncol = 1, rel_heights = c(0.2, 1))
 }
 ```
 
-```{r}
-make_hov(dover_future1)
+```{r,eval=F}
+make_hov(dover_models,gcm='ipsl')
 ```
 
 ## Modeled Environmental Relationships
 
 ```{r}
 make_env <- function(modelobj){
+  
   df <- modelobj$data
   f <- modelobj$formula %>% as.character() %>% pluck(3)
+  
+  # get means for normalization
   meanhab <- mean(df$prop_hard_mixed)
   meant <- mean(df$mean_temp_roms_30_norm)
   meano <- mean(df$mean_oxygen_roms_30_norm)
@@ -574,110 +603,174 @@ make_env <- function(modelobj){
   meanlon <- mean(df$longitude)
   
   if(grepl('prop_hard_mixed',f)){
-    habdf <- tibble(prop_hard_mixed=seq(0,1,length.out=100),year=2000,
-                        mean_temp_roms_30_norm=meant,mean_oxygen_roms_30_norm=meano,
-                    longitude=meanlon,latitude=meanlat)
+    habdf <- tibble(prop_hard_mixed=seq(0,1,length.out=100),year=2000, mean_temp_roms_30_norm=meant, mean_oxygen_roms_30_norm=meano,longitude=meanlon,latitude=meanlat)
+    
     phab <- predict(modelobj,newdata=habdf,se_fit=T)
-    habplot <- ggplot(phab,aes(prop_hard_mixed,exp(est),ymin=exp(est-1.96*est_se),
-                               ymax=exp(est+1.96*est_se)))+
-      geom_line()+geom_ribbon(alpha=0.5)+
+    
+    habplot <- ggplot(phab,aes(prop_hard_mixed,exp(est),ymin=exp(est-1.96*est_se), ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
       labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")
+    
   } else{habplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
       labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")}
   
   
   if(grepl('mean_temp',f)){
-    tdf <- tibble(mean_temp_roms_30_norm=seq(min(df$mean_temp_roms_30_norm)+0.2,max(df$mean_temp_roms_30_norm)-0.2,length.out=100),year=2000,
-                        prop_hard_mixed=meanhab,mean_oxygen_roms_30_norm=meano,
-                    longitude=meanlon,latitude=meanlat)
+    
+    tdf <- tibble(mean_temp_roms_30_norm=seq(min(df$mean_temp_roms_30_norm)+0.2,max(df$mean_temp_roms_30_norm)-0.2,length.out=100),year=2000,prop_hard_mixed=meanhab,mean_oxygen_roms_30_norm=meano,longitude=meanlon,latitude=meanlat)
+    
     pt <- predict(modelobj,newdata=tdf,se_fit=T)
-    tplot <- ggplot(pt,aes(mean_temp_roms_30_norm,exp(est),ymin=exp(est-1.96*est_se),
-                               ymax=exp(est+1.96*est_se)))+
-      geom_line()+geom_ribbon(alpha=0.5)+
-      labs(title="Temperature",x="Normalized T",y="CPUE")
+    
+    # rescale for plotting (un-normalize)
+    pt <- pt %>% mutate(t=mean_temp_roms_30_norm*sd(df$mean_temp_roms_30,na.rm=T)+mean(df$mean_temp_roms_30,na.rm=T))
+    
+    tplot <- ggplot(pt,aes(t,exp(est),ymin=exp(est-1.96*est_se),ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
+      labs(title="Temperature",x="Temperature",y="CPUE")
   }else{tplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
-      labs(title="Temperature",x="Normalized T",y="CPUE")}
+      labs(title="Temperature",x="Temperature",y="CPUE")}
   
   
   if(grepl('mean_oxygen',f)){
-    odf <- tibble(mean_oxygen_roms_30_norm=seq(min(df$mean_oxygen_roms_30_norm)+0.2,max(df$mean_oxygen_roms_30_norm)-0.2,length.out=100),year=2000,
-                        prop_hard_mixed=meanhab,mean_temp_roms_30_norm=meant,
-                    longitude=meanlon,latitude=meanlat)
+    odf <- tibble(mean_oxygen_roms_30_norm=seq(min(df$mean_oxygen_roms_30_norm)+0.2,max(df$mean_oxygen_roms_30_norm)-0.2,length.out=100),year=2000,prop_hard_mixed=meanhab,mean_temp_roms_30_norm=meant,longitude=meanlon,latitude=meanlat)
+    
     po <- predict(modelobj,newdata=odf,se_fit=T)
-    oplot <- ggplot(po,aes(mean_oxygen_roms_30_norm,exp(est),ymin=exp(est-1.96*est_se),
-                               ymax=exp(est+1.96*est_se)))+
-      geom_line()+geom_ribbon(alpha=0.5)+
-      labs(title="Oxygen",x="Normalized Oxygen",y="CPUE")
-  }else{oplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
-      labs(title="Oxygen",x="Normalized Oxygen",y="CPUE")}
+    
+    # rescale for plotting (un-normalize)
+    po <- po %>% mutate(o=mean_oxygen_roms_30_norm*sd(df$mean_oxygen_roms_30,na.rm=T)+mean(df$mean_oxygen_roms_30,na.rm=T))
+    
+    oplot <- ggplot(po,aes(o,exp(est),ymin=exp(est-1.96*est_se),ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
+      labs(title="Oxygen",x="Oxygen (mmol/m3)",y="CPUE")
+    
+  }else{
+    oplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + 
+      geom_blank()+
+      labs(title="Oxygen",x="Oxygen (mmol/m3)",y="CPUE")}
+  
   out <- plot_grid(habplot,tplot,oplot,nrow=1)
-  out
+  
+  # add text for model formula
+  ftext <- f %>% str_replace_all("prop_hard_mixed","habitat") %>% 
+    str_replace_all("mean_temp_roms_30_norm","temperature") %>% 
+    str_replace_all("mean_oxygen_roms_30_norm","oxygen")
+  
+  formulagg <- ggdraw() +
+    draw_label(paste('CPUE ~',ftext),size = 8)
+  plot_grid(out,formulagg,ncol=1,rel_heights = c(1,0.2))
 }
 ```
 
-```{r}
-make_env(dover_models %>% pluck('model',1))
+```{r,eval=F}
+make_env(dover_models %>% pluck('model',5))
 ```
 
 ## All Together
 
 ```{r}
-save_projection_plots <- function(modelobj,savedir=here::here('plots')){
-  # make projection
-  projection <- make_predictions(modelobj)
+# make and save all plots for a given model dataframe and a given GCM
+save_projection_plots <- function(model_df,gcm='hadl',savedir=here::here('plots')){
+  # make ensemble projection
+  tic('making ensemble projections')
+  projection <- ensemble_predictions(model_df,gcm=gcm)
+  toc()
   
   # maps
   # historical average cpue
+  tic('making maps')
   baseline_cpue <- map_year(projection,yr_vec=1980:2010)
   # 2050 and 2100 relative to baseline
   diff2050 <- make_comparison_map(projection,yr=2050)
   diff2100 <- make_comparison_map(projection,yr=2100)
+  toc()
   
   # index of abundance, center of gravity, hovmoller plots
-  ind <- make_index(projection)
-  cog <- make_cog(projection)
-  hov <- make_hov(projection)
+  tic('making abundance,cog, and hovmoller plots')
+  ind <- make_index(model_df,gcm=gcm)
+  cog <- make_cog(model_df,gcm=gcm)
+  hov <- make_hov(model_df,gcm=gcm)
+  toc()
   
   # environmental relationships
-  env_rels <- make_env(modelobj)
+  tic('making environmental relationships')
+  future::plan(multisession)
+  env_rels <- furrr::future_map(model_df %>% pluck('model'),make_env)
+  toc()
   
   # save everything to file
+  tic('saving plots')
+  sppname <- unique(model_df$spp) %>% tools::toTitleCase()
+  savedir <- paste0(savedir,'/',sppname)
   dir.create(savedir)
+  savedir <- paste0(savedir,'/',gcm)
+  dir.create(savedir)
+  
   ggsave(filename=paste0(savedir,'/baseline_cpue.png'),baseline_cpue)
   ggsave(filename=paste0(savedir,'/diff2050.png'),diff2050)
   ggsave(filename=paste0(savedir,'/diff2100.png'),diff2100)
   ggsave(filename=paste0(savedir,'/ind.png'),ind)
   ggsave(filename=paste0(savedir,'/cog.png'),cog)
   ggsave(filename=paste0(savedir,'/hov.png'),hov)
-  ggsave(filename=paste0(savedir,'/environmental_affiinities.png'),env_rels)
   
+  for(i in 1:length(env_rels)){
+    ggsave(plot = env_rels[[i]], filename = paste0(savedir,"/environmental_affinities_model",i,".png"))
+  }
+  toc()
   #
   print("Plots saved")
 }
 ```
 
+Try this with the DTS models.
+
+```{r,eval=F}
+# save_projection_plots(dover_models,gcm = 'gfdl')
+dover_models <- read_rds(here::here('model output','dover sole models.rds'))
+save_projection_plots(dover_models,gcm = 'hadl')
+save_projection_plots(dover_models,gcm = 'ipsl')
+save_projection_plots(dover_models,gcm = 'gfdl')
+
+# sablefish
+sable_models <- read_rds(here::here('model output','sablefish models.rds'))
+save_projection_plots(sable_models,gcm = 'hadl')
+save_projection_plots(sable_models,gcm = 'ipsl')
+save_projection_plots(sable_models,gcm = 'gfdl')
+
+rm(sable_models)
+# longspine thornyhead
+ls_models <- read_rds(here::here('model output','longspine thornyhead models.rds'))
+save_projection_plots(ls_models,gcm = 'hadl')
+save_projection_plots(ls_models,gcm = 'ipsl')
+save_projection_plots(ls_models,gcm = 'gfdl')
+
+```
+
+
 ```{r,fig.width=8,fig.height=8}
-sable_model1 <- sdms %>% pluck('sablefish','model',1)
-sable_model8 <- sdms %>% pluck('sablefish','model',8)
-save_projection_plots(sable_model1,savedir=here::here('plots','sablefish hadl 1'))
-save_projection_plots(sable_model8,savedir=here::here('plots','sablefish hadl 8'))
-
-# two for canary
-canary_model1 <- sdms %>% pluck('canary rockfish','model',1)
-canary_model8 <- sdms %>% pluck('canary rockfish','model',8)
-save_projection_plots(canary_model1,savedir=here::here('plots','canary hadl 1'))
-save_projection_plots(canary_model8,savedir=here::here('plots','canary hadl 8'))
-
-#two for shortspine
-shortspine_model1 <- sdms %>% pluck('shortspine thornyhead','model',1)
-shortspine_model8 <- sdms %>% pluck('shortspine thornyhead','model',8)
-save_projection_plots(shortspine_model1,savedir=here::here('plots','shortspine hadl 1'))
-save_projection_plots(shortspine_model8,savedir=here::here('plots','shortspine hadl 8'))
-
-#two for darkblotched
-dark_model1 <- sdms %>% pluck('darkblotched rockfish','model',1)
-dark_model8 <- sdms %>% pluck('darkblotched rockfish','model',8)
-save_projection_plots(dark_model1,savedir=here::here('plots','darkblotched hadl 1'))
-save_projection_plots(dark_model8,savedir=here::here('plots','darkblotched hadl 8'))
+# sable_model1 <- sdms %>% pluck('sablefish','model',1)
+# sable_model8 <- sdms %>% pluck('sablefish','model',8)
+# save_projection_plots(sable_model1,savedir=here::here('plots','sablefish hadl 1'))
+# save_projection_plots(sable_model8,savedir=here::here('plots','sablefish hadl 8'))
+# 
+# # two for canary
+# canary_model1 <- sdms %>% pluck('canary rockfish','model',1)
+# canary_model8 <- sdms %>% pluck('canary rockfish','model',8)
+# save_projection_plots(canary_model1,savedir=here::here('plots','canary hadl 1'))
+# save_projection_plots(canary_model8,savedir=here::here('plots','canary hadl 8'))
+# 
+# #two for shortspine
+# shortspine_model1 <- sdms %>% pluck('shortspine thornyhead','model',1)
+# shortspine_model8 <- sdms %>% pluck('shortspine thornyhead','model',8)
+# save_projection_plots(shortspine_model1,savedir=here::here('plots','shortspine hadl 1'))
+# save_projection_plots(shortspine_model8,savedir=here::here('plots','shortspine hadl 8'))
+# 
+# #two for darkblotched
+# dark_model1 <- sdms %>% pluck('darkblotched rockfish','model',1)
+# dark_model8 <- sdms %>% pluck('darkblotched rockfish','model',8)
+# save_projection_plots(dark_model1,savedir=here::here('plots','darkblotched hadl 1'))
+# save_projection_plots(dark_model8,savedir=here::here('plots','darkblotched hadl 8'))
 ```
 

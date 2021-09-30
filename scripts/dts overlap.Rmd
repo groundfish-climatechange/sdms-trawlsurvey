@@ -1,0 +1,164 @@
+---
+title: "DTS projection comparison"
+author: "Owen Liu"
+date: "9/29/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+# vista is Eric Ward's library for looking at outputs
+library(vista)
+library(cowplot)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+Load functions from projection script
+
+```{r}
+rmarkdown::render(here::here('scripts','sdmTMB_projection.Rmd'),quiet=TRUE)
+```
+
+# Produce ensemble predictions for DTS
+
+Use IPSL ESM for now
+
+```{r}
+dover_models <- read_rds(here::here('model output','dover sole models.rds'))
+sable_models <- read_rds(here::here('model output','sablefish models.rds'))
+ls_models <- read_rds(here::here('model output','longspine thornyhead models.rds'))
+
+dover_ens <- ensemble_predictions(dover_models,gcm='ipsl')
+sable_ens <- ensemble_predictions(sable_models,gcm='ipsl')
+ls_ens <- ensemble_predictions(ls_models,gcm='ipsl')
+
+dover2021 <- map_year(dover_ens,yr_vec=2021,return_pred_df=T) %>% rename(dover=est)
+sable2021 <- map_year(sable_ens,yr_vec=2021,return_pred_df=T)%>% rename(sable=est)
+ls2021 <- map_year(ls_ens,yr_vec=2021,return_pred_df=T)%>% rename(ls=est)
+
+dover2100 <- map_year(dover_ens,yr_vec=2100,return_pred_df=T)%>% rename(dover=est)
+sable2100 <- map_year(sable_ens,yr_vec=2100,return_pred_df=T)%>% rename(sable=est)
+ls2100 <- map_year(ls_ens,yr_vec=2100,return_pred_df=T)%>% rename(ls=est)
+```
+
+# Maps
+
+```{r}
+dover2021_map <- map_year(dover_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)
+sable2021_map <- map_year(sable_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)
+ls2021_map <- map_year(ls_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)
+
+plot_grid(dover2021_map,sable2021_map,ls2021_map,nrow=1)
+
+dover2100_map <- map_year(dover_ens,yr_vec=2080:2100,return_pred_df=F,plot_leg = F)
+sable2100_map <- map_year(sable_ens,yr_vec=2080:2100,return_pred_df=F,plot_leg = F)
+ls2100_map <- map_year(ls_ens,yr_vec=2080:2100,return_pred_df=F,plot_leg = F)
+plot_grid(dover2100_map,sable2100_map,ls2100_map,nrow=1)
+```
+
+# Calculate Overlap Over Time
+
+Pairwise range overlap (Hurlbert's index)
+
+$$ H = \sum_{1}^{n}\frac{p_{1,i}*p_{2,i}}{A_i/A_{tot}}$$
+where $p_{1,i}$ is the proportion of species 1 abundance in grid cell $i$, and $A_i$ is the area of grid cell $i$ relative to the total number of grid cells $A_{tot}$. For our purposes, there are 1032 identically-sized grid cells, so $A_i/A_{tot} = 1/1032$
+
+Also calculating an index of local collocation, 
+
+$$ L = \frac{\sum_{1}^{n}{p_{1,i}}*p_{2,i}}{\sqrt{{\sum_{1}^{n}p_{1,i}^2}{\sum_{1}^{n}p_{2,i}^2}}}$$
+which describes the correlation between two ranges. It ranges between 0 and 1 and can be thought of as the ratio of the probability of finding two species in the same area to the total probability of finding either species.
+
+```{r}
+dover_prop <- dover_ens %>%
+  group_by(year) %>% 
+  mutate(doverprop=ens_est/sum(ens_est)) %>% 
+  ungroup() %>% 
+  select(year,lat,lon,doverprop)
+
+sable_prop <- sable_ens %>%
+  group_by(year) %>% 
+  mutate(sableprop=ens_est/sum(ens_est))%>% 
+  ungroup() %>% 
+  select(year,lat,lon,sableprop)
+
+ls_prop <- ls_ens %>%
+  group_by(year) %>% 
+  mutate(lsprop=ens_est/sum(ens_est))%>% 
+  ungroup() %>% 
+  select(year,lat,lon,lsprop)
+
+all_prop <- dover_prop %>% 
+  left_join(sable_prop) %>% 
+  left_join(ls_prop)
+
+n_cells <- all_prop %>% distinct(lat,lon) %>% nrow()
+
+# Hurlbert's index
+
+all_hurl <- all_prop %>% 
+  mutate(dover_sable=doverprop*sableprop/(1/n_cells),
+         dover_ls=doverprop*lsprop/(1/n_cells),
+         sable_ls=sableprop*lsprop/(1/n_cells)) %>% 
+  group_by(year) %>% 
+  summarise(dover_sable_hurl=sum(dover_sable),
+            dover_ls_hurl = sum(dover_ls),
+            sable_ls_hurl= sum(sable_ls)) %>% 
+  ungroup()
+
+all_hurl %>% 
+  pivot_longer(dover_sable_hurl:sable_ls_hurl,values_to='hurl') %>% 
+  ggplot(aes(x=year,hurl,col=name))+
+  scale_y_continuous(limits=c(0,10),breaks=seq(0,10,by=2))+
+  geom_line()
+
+# Local index of collocation
+all_loc <- all_prop %>% 
+  mutate(dover_sable=doverprop*sableprop,
+         dover_ls=doverprop*lsprop,
+         sable_ls=sableprop*lsprop) %>% 
+  group_by(year) %>% 
+  summarise(dover_sable_loc=sum(dover_sable)/sqrt(sum(doverprop^2)*sum(sableprop^2)),
+            dover_ls_loc = sum(dover_ls)/sqrt(sum(doverprop^2)*sum(lsprop^2)),
+            sable_ls_loc= sum(sable_ls)/sqrt(sum(sableprop^2)*sum(lsprop^2))) %>% 
+  ungroup()
+
+all_loc %>% 
+  pivot_longer(dover_sable_loc:sable_ls_loc,values_to='loc') %>% 
+  mutate(lab=case_when(
+    name=="dover_sable_loc" ~ "Dover Sole/Sablefish",
+    name=="dover_ls_loc" ~ "Dover Sole/Thornyhead",
+    name=="sable_ls_loc" ~ "Sablefish/Thornyhead"
+  )) %>% 
+  ggplot(aes(x=year,loc,col=lab))+
+  geom_line(size=1.5)+
+  theme(legend.position=c(0.8,0.75),
+        legend.background = element_rect(color='black'))+
+  labs(x="Year",y="Index of Collocation",color="Species Pair")
+```
+
