@@ -94,6 +94,9 @@ species <- trawl_roms_utm %>%
   ungroup() %>%
   slice_max(order_by = meancpue,n=10)
 species
+
+# for Steph Brodie 10/21
+species <- tibble(species=c("blue rockfish","california halibut"))
 ```
 
 Run models and save cross-validation model stacking weights

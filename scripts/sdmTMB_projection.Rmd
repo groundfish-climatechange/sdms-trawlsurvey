@@ -660,7 +660,7 @@ make_env <- function(modelobj){
   
   formulagg <- ggdraw() +
     draw_label(paste('CPUE ~',ftext),size = 8)
-  plot_grid(out,formulagg,ncol=1,rel_heights = c(1,0.2))
+  plot_grid(out,formulagg,ncol=1,rel_heights = c(1,0.2))+plot_theme
 }
 ```
 

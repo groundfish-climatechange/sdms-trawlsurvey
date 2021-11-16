@@ -34,7 +34,7 @@ plot_theme <-   theme_minimal()+
   theme(text=element_text(family="sans",size=10,color="black"),
         legend.text = element_text(size=14),
         axis.title=element_text(family="sans",size=14,color="black"),
-        axis.text=element_text(family="sans",size=8,color="black"),
+        axis.text=element_text(family="sans",size=10,color="black"),
         panel.grid.major = element_line(color="gray50",linetype=3))
 theme_set(plot_theme)
 ```
@@ -156,6 +156,7 @@ all_loc %>%
     name=="dover_ls_loc" ~ "Dover Sole/Thornyhead",
     name=="sable_ls_loc" ~ "Sablefish/Thornyhead"
   )) %>% 
+  filter(year>2020) %>% 
   ggplot(aes(x=year,loc,col=lab))+
   geom_line(size=1.5)+
   theme(legend.position=c(0.8,0.75),
@@ -180,11 +181,110 @@ dover_indices <- dover_index_ipsl$data %>%
   left_join(dover_index_gfdl$data %>% rename(GFDL=w.est))
   
 dover_indices %>% 
+  filter(year>2020) %>% 
   pivot_longer(IPSL:GFDL,names_to="model",values_to='abun') %>% 
   ggplot(aes(x=year,abun/10000,col=model))+
   geom_line(size=1.5)+
   theme(legend.position=c(0.1,0.25),
         legend.background = element_rect(color='black'))+
   labs(x="Year",y="Ensemble Index of Abundance",color="Model")
+```
+
+# Ensemble Abundance and COG
+
+```{r}
+make_index(dover_models)
+```
+```{r}
+make_index(sable_models)
+```
+```{r}
+make_index(ls_models)
+```
+```{r}
+make_cog(dover_models)
+make_cog(sable_models)
+make_cog(ls_models)
+```
+## Env Affinities
+
+Dover
+
+```{r,fig.width=8,fig.height=3}
+make_env(dover_models %>% pluck('model',1))
+```
+
+
+Sablefish
+```{r,fig.width=8,fig.height=3}
+make_env(sable_models %>% pluck('model',1))
+```
+Longspine
+```{r,fig.width=8,fig.height=3}
+make_env(ls_models %>% pluck('model',1))
+```
+
+
+
+## Comparison Maps
+
+```{r}
+sablemap1 <- make_comparison_map(sable_ens,yr=2050)
+sablemap2 <- make_comparison_map(sable_ens,yr=2100)
+
+lsmap1 <- make_comparison_map(ls_ens,yr=2050)
+lsmap2 <- make_comparison_map(ls_ens,yr=2100)
+```
+
+# Overlapping Niche Space
+
+```{r}
+# combined ensemble abundance
+three_spp <- dover_ens %>% rename(dover=ens_est) %>% 
+  left_join(sable_ens %>% rename(sable=ens_est)) %>% 
+  left_join(ls_ens %>% rename(longspine=ens_est)) %>% 
+  # relative abundance
+  mutate(across(dover:longspine, ~exp(.x))) %>% 
+  mutate(across(dover:longspine, ~.x/max(.x))) %>% 
+  # join roms data
+  left_join(roms)
+
+# temperature/oxygen biplot
+# t_o_kobe <- three_spp %>% 
+#   filter(year>1979,year<2021) %>% 
+#   dplyr::select(dover:longspine,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+#   pivot_longer(dover:longspine,names_to="species",values_to="rel_abun") %>% 
+#   mutate(species=factor(species)) %>% 
+#   ggplot(aes(x=mean_bt_30d_ipsl,y=mean_oxy_bottom_30d_ipsl,z=rel_abun,group=species))+
+#   geom_contour_filled()+
+#   labs(x="Temperature",y="Oxygen (mmol/m3)")
+# t_o_kobe
+# 
+# three_spp %>% 
+#   filter(year>1979,year<2021) %>% 
+#   dplyr::select(dover:longspine,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+#   pivot_longer(dover:longspine,names_to="species",values_to="rel_abun") %>% 
+#   mutate(species=factor(species)) %>% 
+#   ggplot(aes(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,z=rel_abun,group=species))+
+#   geom_contour_filled()+
+#   labs(x="Temperature",y="Oxygen (mmol/m3)")
+```
+
+# Landings and Value
+
+```{r}
+v <- read_csv(here('data','dts_landings.csv'))
+v %>% 
+  rename(name=`NMFS Name`) %>% 
+  mutate(Year=as.integer(Year)) %>% 
+  mutate(lab=case_when(
+    name=="SABLEFISH" ~ "Sablefish",
+    name=="SOLE, DOVER" ~ "Dover Sole",
+    name=="THORNYHEAD, LONGSPINE" ~ "Longspine Thornyhead"
+  )) %>% 
+  ggplot(aes(Year,Dollars/1e6,color=lab))+geom_line(size=1.5)+
+  labs(x="Year",y="Landings (Million $)",color="")+
+  scale_x_continuous(breaks=seq(2010,2020,by=2))+
+  theme(legend.position = c(0.8,0.9))
 ```
 

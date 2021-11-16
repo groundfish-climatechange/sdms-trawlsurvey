@@ -1,0 +1,782 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode=true}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  pdftitle={Run sdmTMB},
+  pdfauthor={Owen Liu},
+  hidelinks,
+}
+\urlstyle{same} % disable monospaced font for URLs
+\usepackage[margin=1in]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{Run sdmTMB}
+\author{Owen Liu}
+\date{6/8/2021}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\hypertarget{purpose}{%
+\section{Purpose}\label{purpose}}
+
+Join trawl survey data with ROMS oceanographic data and substrate data,
+and write an sdmTMB wrapper to run models. Actual modelling done in
+script \texttt{sdmTMB\ models.Rmd}
+
+\hypertarget{import-data}{%
+\section{Import Data}\label{import-data}}
+
+\hypertarget{trawl-data}{%
+\subsection{Trawl Data}\label{trawl-data}}
+
+Trawl data, including a matching key to link to ROMS data. The hindcast
+ROMS data has values for all trawl survey locations for all times, but
+we just want the values matched to the actual trawl survey times/dates.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{trawl <-}\StringTok{ }\KeywordTok{read_rds}\NormalTok{(}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'nwfsc_trawl_data.rds'}\NormalTok{)) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# convert date from character to date}
+\StringTok{  }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{date=}\KeywordTok{as_date}\NormalTok{(date))}
+\CommentTok{# roms time refernce}
+\NormalTok{roms_time <-}\StringTok{ }\KeywordTok{read_rds}\NormalTok{(}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'roms_time_date_reference.rds'}\NormalTok{))}
+\NormalTok{trawl_locs <-}\StringTok{ }\KeywordTok{read_rds}\NormalTok{(here}\OperatorTok{::}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'trawl'}\NormalTok{,}\StringTok{'trawlID.rds'}\NormalTok{)) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# add a dummy indicator of a "real" trawl survey location in time/space}
+\StringTok{  }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{date=}\KeywordTok{as_datetime}\NormalTok{(trawl_time,}\DataTypeTok{origin=}\StringTok{"1900-01-01"}\NormalTok{)) }\OperatorTok{%>%}
+\StringTok{  }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{date=}\KeywordTok{as_date}\NormalTok{(date)) }\OperatorTok{%>%}
+\StringTok{  }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{realTrawl=}\DecValTok{1}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# join the roms_time reference}
+\StringTok{  }\KeywordTok{left_join}\NormalTok{(roms_time) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# select the variable we'll use to match}
+\StringTok{  }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{select}\NormalTok{(station,date,time,lon_trawl,lat_trawl,depth_trawl,realTrawl)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Joining, by = "date"
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{trawl <-}\StringTok{ }\NormalTok{trawl }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\KeywordTok{left_join}\NormalTok{(trawl_locs,}\DataTypeTok{by=}\KeywordTok{c}\NormalTok{(}\StringTok{"date"}\NormalTok{=}\StringTok{"date"}\NormalTok{,}\StringTok{"longitude_dd"}\NormalTok{=}\StringTok{"lon_trawl"}\NormalTok{,}\StringTok{"latitude_dd"}\NormalTok{=}\StringTok{"lat_trawl"}\NormalTok{,}\StringTok{"depth"}\NormalTok{=}\StringTok{"depth_trawl"}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+Filter the trawl survey data to fit within the time frame for which we
+have ROMS hindcast data (1980-2010)
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{trawl <-}\StringTok{ }\NormalTok{trawl }\OperatorTok{%>%}
+\StringTok{  }\KeywordTok{filter}\NormalTok{(realTrawl}\OperatorTok{==}\DecValTok{1}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{select}\NormalTok{(}\OperatorTok{-}\NormalTok{realTrawl) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# rename time to something more useful}
+\StringTok{  }\KeywordTok{rename}\NormalTok{(}\DataTypeTok{roms_hindcast_day=}\NormalTok{time)}
+\KeywordTok{glimpse}\NormalTok{(trawl)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 374,688
+## Columns: 25
+## $ trawl_id            [3m[38;5;246m<dbl>[39m[23m 2.00303e+11, 2.00303e+11, 2.00303e+11, 2.00403e+11, 2.00503e+11, 2.00503e+11, ~
+## $ scientific_name     [3m[38;5;246m<chr>[39m[23m "sebastes elongatus", "sebastes elongatus", "sebastes elongatus", "sebastes el~
+## $ project             [3m[38;5;246m<chr>[39m[23m "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NW~
+## $ year                [3m[38;5;246m<int>[39m[23m 2003, 2003, 2003, 2004, 2005, 2005, 2005, 2005, 2005, 2005, 2006, 2006, 2007, ~
+## $ pass                [3m[38;5;246m<int>[39m[23m 1, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, ~
+## $ vessel              [3m[38;5;246m<chr>[39m[23m "Captain Jack", "Excalibur", "Ms. Julie", "Excalibur", "Excalibur", "Ms. Julie~
+## $ tow                 [3m[38;5;246m<int>[39m[23m 111, 92, 119, 67, 205, 13, 38, 65, 116, 162, 169, 48, 154, 123, 169, 1, 2, 3, ~
+## $ date                [3m[38;5;246m<date>[39m[23m 2003-07-29, 2003-09-27, 2003-07-30, 2004-09-06, 2005-10-16, 2005-05-31, 2005-~
+## $ longitude_dd        [3m[38;5;246m<dbl>[39m[23m -123.1244, -124.6703, -122.5511, -124.4600, -118.6017, -124.2775, -124.4697, -~
+## $ latitude_dd         [3m[38;5;246m<dbl>[39m[23m 38.07694, 41.48583, 37.37694, 43.67444, 33.65722, 45.83417, 46.31750, 43.85528~
+## $ area_swept_ha       [3m[38;5;246m<dbl>[39m[23m 1.837650, 3.047135, 1.651004, 1.821803, 1.178600, 1.530574, 1.453994, 1.582128~
+## $ subsample_count     [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 48, 0, 1, 6, 0, 16, 0, 1, 53, 0, 0, 0, 0, 0, 0, 0, 49, 0, 0, 2, 0, 0,~
+## $ subsample_wt_kg     [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 10.30, 0.00, 0.12, 0.80, 0.00, 1.95, 0.00, 0.02, 14.10, 0.00~
+## $ total_catch_numbers [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 48, 0, 1, 6, 0, 16, 0, 1, 242, 0, 0, 0, 0, 0, 0, 0, 81, 0, 0, 2, 0, 0~
+## $ total_catch_wt_kg   [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 10.30, 0.00, 0.12, 0.80, 0.00, 1.95, 0.00, 0.02, 64.45, 0.00~
+## $ cpue_kg_km2         [3m[38;5;246m<dbl>[39m[23m 0.000000, 0.000000, 0.000000, 565.373957, 0.000000, 7.840197, 55.020868, 0.000~
+## $ species             [3m[38;5;246m<chr>[39m[23m "greenstriped rockfish", "greenstriped rockfish", "greenstriped rockfish", "gr~
+## $ o2                  [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA~
+## $ temp                [3m[38;5;246m<dbl>[39m[23m 9.0359, 3.6300, 10.0280, 8.1160, 5.9237, 6.9375, 6.2750, 6.5258, 9.1859, 4.073~
+## $ sal                 [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA~
+## $ depth               [3m[38;5;246m<dbl>[39m[23m 79.9095, 948.4094, 63.6213, 131.7826, 581.3504, 136.0367, 135.9776, 304.9347, ~
+## $ performance         [3m[38;5;246m<chr>[39m[23m "Satisfactory", "Satisfactory", "Satisfactory", "Satisfactory", "Satisfactory"~
+## $ survey              [3m[38;5;246m<chr>[39m[23m "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nw~
+## $ station             [3m[38;5;246m<int>[39m[23m 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,~
+## $ roms_hindcast_day   [3m[38;5;246m<int>[39m[23m 8611, 8671, 8612, 9016, 9421, 9283, 9289, 9302, 9321, 9336, 9695, 9740, 10053,~
+\end{verbatim}
+
+\hypertarget{roms-data}{%
+\subsection{ROMS data}\label{roms-data}}
+
+Hindcast ROMS data matched to trawl survey locations and times
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{roms <-}\StringTok{ }\KeywordTok{read_rds}\NormalTok{(here}\OperatorTok{::}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'joined_30d_lagged_t_o.rds'}\NormalTok{)) }\OperatorTok{%>%}
+\StringTok{  }\CommentTok{# join the trawl_locs and filter by actual trawl locations and times}
+\StringTok{  }\KeywordTok{left_join}\NormalTok{(trawl_locs) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\KeywordTok{filter}\NormalTok{(realTrawl}\OperatorTok{==}\DecValTok{1}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\KeywordTok{select}\NormalTok{(}\OperatorTok{-}\NormalTok{realTrawl) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# rename time to something more useful}
+\StringTok{  }\KeywordTok{rename}\NormalTok{(}\DataTypeTok{roms_hindcast_day=}\NormalTok{time)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Joining, by = c("station", "time", "lon_trawl", "lat_trawl", "depth_trawl")
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{glimpse}\NormalTok{(roms)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 4,832
+## Columns: 13
+## $ temp_roms           [3m[38;5;246m<dbl>[39m[23m 4.184411, 5.565145, 6.866655, 3.951781, 7.336621, 7.267605, 3.350144, 6.280363~
+## $ oxygen_roms         [3m[38;5;246m<dbl>[39m[23m 44.78112, 78.12999, 137.91451, 41.38925, 168.28668, 166.14552, 28.76366, 123.9~
+## $ station             [3m[38;5;246m<int>[39m[23m 274, 4671, 4772, 4773, 4845, 120, 4672, 4774, 4775, 4783, 4825, 275, 4840, 484~
+## $ roms_hindcast_day   [3m[38;5;246m<int>[39m[23m 8576, 8576, 8576, 8576, 8576, 8577, 8577, 8577, 8577, 8577, 8577, 8578, 8578, ~
+## $ trawl_time          [3m[38;5;246m<dbl>[39m[23m 3265444800, 3265444800, 3265444800, 3265444800, 3265444800, 3265531200, 326553~
+## $ lon_trawl           [3m[38;5;246m<dbl>[39m[23m -124.7761, -124.7389, -124.5156, -124.7325, -124.5428, -124.8156, -125.1642, -~
+## $ lat_trawl           [3m[38;5;246m<dbl>[39m[23m 46.09611, 46.02472, 46.15667, 46.50389, 46.75500, 47.60194, 46.81083, 47.67139~
+## $ depth_trawl         [3m[38;5;246m<dbl>[39m[23m 564.9317, 310.0056, 140.7280, 606.3237, 107.4615, 106.0853, 797.7154, 176.6774~
+## $ temp_trawl          [3m[38;5;246m<dbl>[39m[23m 4.8597, 5.6246, 6.7312, 4.6011, 6.8820, 6.9012, 3.8907, 6.7184, 6.7229, 6.6450~
+## $ oxygen_trawl        [3m[38;5;246m<dbl>[39m[23m NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN~
+## $ mean_temp_roms_30   [3m[38;5;246m<dbl>[39m[23m 4.227865, 5.564605, 6.970570, 4.016127, 7.363900, 7.492323, 3.361807, 6.455107~
+## $ mean_oxygen_roms_30 [3m[38;5;246m<dbl>[39m[23m 45.80141, 81.00598, 141.60814, 42.14824, 170.73278, 178.97508, 28.82358, 128.2~
+## $ date                [3m[38;5;246m<date>[39m[23m 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-25, 2003-~
+\end{verbatim}
+
+\hypertarget{substrate-data}{%
+\subsection{Substrate Data}\label{substrate-data}}
+
+Here is the substrate data that Blake Feist matched to individual trawl
+tows.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{substrate <-}\StringTok{ }\KeywordTok{read_rds}\NormalTok{(}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'substrate'}\NormalTok{,}\StringTok{'substrate_by_trawlID.rds'}\NormalTok{))}
+\KeywordTok{glimpse}\NormalTok{(substrate)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 20,746
+## Columns: 11
+## $ TRAWL_ID                                           [3m[38;5;246m<dbl>[39m[23m 1.97706e+11, 1.97706e+11, 1.97706e+11, 1.97706e~
+## $ `Length_of_towline_outside_substrate_domain_(m)`   [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,~
+## $ `Length_of_towline_traversing_hard_substrate_(m)`  [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,~
+## $ `Length_of_towline_traversing_mixed_substrate_(m)` [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 169.37, 0.00, 0.00, 0.00, 0.00, 0.0~
+## $ `Length_of_towline_traversing_soft_substrate_(m)`  [3m[38;5;246m<dbl>[39m[23m 2628.42, 2484.34, 2899.37, 2570.00, 2639.27, 25~
+## $ `Total_length_of_towline_(m)`                      [3m[38;5;246m<dbl>[39m[23m 2628.42, 2484.34, 3068.74, 2570.00, 2639.27, 25~
+## $ Proportion_outside_substrate_domain                [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,~
+## $ Proportion_hard                                    [3m[38;5;246m<dbl>[39m[23m 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0~
+## $ Proportion_mixed                                   [3m[38;5;246m<dbl>[39m[23m 0.00000000, 0.00000000, 0.05519243, 0.00000000,~
+## $ Proportion_soft                                    [3m[38;5;246m<dbl>[39m[23m 1.00000000, 1.00000000, 0.94480757, 1.00000000,~
+## $ prop_hard_mixed                                    [3m[38;5;246m<dbl>[39m[23m 0.00000000, 0.00000000, 0.05519243, 0.00000000,~
+\end{verbatim}
+
+Look at the form of these data
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{glimpse}\NormalTok{(trawl)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 374,688
+## Columns: 25
+## $ trawl_id            [3m[38;5;246m<dbl>[39m[23m 2.00303e+11, 2.00303e+11, 2.00303e+11, 2.00403e+11, 2.00503e+11, 2.00503e+11, ~
+## $ scientific_name     [3m[38;5;246m<chr>[39m[23m "sebastes elongatus", "sebastes elongatus", "sebastes elongatus", "sebastes el~
+## $ project             [3m[38;5;246m<chr>[39m[23m "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NWFSC.Combo", "NW~
+## $ year                [3m[38;5;246m<int>[39m[23m 2003, 2003, 2003, 2004, 2005, 2005, 2005, 2005, 2005, 2005, 2006, 2006, 2007, ~
+## $ pass                [3m[38;5;246m<int>[39m[23m 1, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, ~
+## $ vessel              [3m[38;5;246m<chr>[39m[23m "Captain Jack", "Excalibur", "Ms. Julie", "Excalibur", "Excalibur", "Ms. Julie~
+## $ tow                 [3m[38;5;246m<int>[39m[23m 111, 92, 119, 67, 205, 13, 38, 65, 116, 162, 169, 48, 154, 123, 169, 1, 2, 3, ~
+## $ date                [3m[38;5;246m<date>[39m[23m 2003-07-29, 2003-09-27, 2003-07-30, 2004-09-06, 2005-10-16, 2005-05-31, 2005-~
+## $ longitude_dd        [3m[38;5;246m<dbl>[39m[23m -123.1244, -124.6703, -122.5511, -124.4600, -118.6017, -124.2775, -124.4697, -~
+## $ latitude_dd         [3m[38;5;246m<dbl>[39m[23m 38.07694, 41.48583, 37.37694, 43.67444, 33.65722, 45.83417, 46.31750, 43.85528~
+## $ area_swept_ha       [3m[38;5;246m<dbl>[39m[23m 1.837650, 3.047135, 1.651004, 1.821803, 1.178600, 1.530574, 1.453994, 1.582128~
+## $ subsample_count     [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 48, 0, 1, 6, 0, 16, 0, 1, 53, 0, 0, 0, 0, 0, 0, 0, 49, 0, 0, 2, 0, 0,~
+## $ subsample_wt_kg     [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 10.30, 0.00, 0.12, 0.80, 0.00, 1.95, 0.00, 0.02, 14.10, 0.00~
+## $ total_catch_numbers [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 48, 0, 1, 6, 0, 16, 0, 1, 242, 0, 0, 0, 0, 0, 0, 0, 81, 0, 0, 2, 0, 0~
+## $ total_catch_wt_kg   [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 10.30, 0.00, 0.12, 0.80, 0.00, 1.95, 0.00, 0.02, 64.45, 0.00~
+## $ cpue_kg_km2         [3m[38;5;246m<dbl>[39m[23m 0.000000, 0.000000, 0.000000, 565.373957, 0.000000, 7.840197, 55.020868, 0.000~
+## $ species             [3m[38;5;246m<chr>[39m[23m "greenstriped rockfish", "greenstriped rockfish", "greenstriped rockfish", "gr~
+## $ o2                  [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA~
+## $ temp                [3m[38;5;246m<dbl>[39m[23m 9.0359, 3.6300, 10.0280, 8.1160, 5.9237, 6.9375, 6.2750, 6.5258, 9.1859, 4.073~
+## $ sal                 [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA~
+## $ depth               [3m[38;5;246m<dbl>[39m[23m 79.9095, 948.4094, 63.6213, 131.7826, 581.3504, 136.0367, 135.9776, 304.9347, ~
+## $ performance         [3m[38;5;246m<chr>[39m[23m "Satisfactory", "Satisfactory", "Satisfactory", "Satisfactory", "Satisfactory"~
+## $ survey              [3m[38;5;246m<chr>[39m[23m "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nwfsc.combo", "nw~
+## $ station             [3m[38;5;246m<int>[39m[23m 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,~
+## $ roms_hindcast_day   [3m[38;5;246m<int>[39m[23m 8611, 8671, 8612, 9016, 9421, 9283, 9289, 9302, 9321, 9336, 9695, 9740, 10053,~
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{glimpse}\NormalTok{(roms)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 4,832
+## Columns: 13
+## $ temp_roms           [3m[38;5;246m<dbl>[39m[23m 4.184411, 5.565145, 6.866655, 3.951781, 7.336621, 7.267605, 3.350144, 6.280363~
+## $ oxygen_roms         [3m[38;5;246m<dbl>[39m[23m 44.78112, 78.12999, 137.91451, 41.38925, 168.28668, 166.14552, 28.76366, 123.9~
+## $ station             [3m[38;5;246m<int>[39m[23m 274, 4671, 4772, 4773, 4845, 120, 4672, 4774, 4775, 4783, 4825, 275, 4840, 484~
+## $ roms_hindcast_day   [3m[38;5;246m<int>[39m[23m 8576, 8576, 8576, 8576, 8576, 8577, 8577, 8577, 8577, 8577, 8577, 8578, 8578, ~
+## $ trawl_time          [3m[38;5;246m<dbl>[39m[23m 3265444800, 3265444800, 3265444800, 3265444800, 3265444800, 3265531200, 326553~
+## $ lon_trawl           [3m[38;5;246m<dbl>[39m[23m -124.7761, -124.7389, -124.5156, -124.7325, -124.5428, -124.8156, -125.1642, -~
+## $ lat_trawl           [3m[38;5;246m<dbl>[39m[23m 46.09611, 46.02472, 46.15667, 46.50389, 46.75500, 47.60194, 46.81083, 47.67139~
+## $ depth_trawl         [3m[38;5;246m<dbl>[39m[23m 564.9317, 310.0056, 140.7280, 606.3237, 107.4615, 106.0853, 797.7154, 176.6774~
+## $ temp_trawl          [3m[38;5;246m<dbl>[39m[23m 4.8597, 5.6246, 6.7312, 4.6011, 6.8820, 6.9012, 3.8907, 6.7184, 6.7229, 6.6450~
+## $ oxygen_trawl        [3m[38;5;246m<dbl>[39m[23m NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN~
+## $ mean_temp_roms_30   [3m[38;5;246m<dbl>[39m[23m 4.227865, 5.564605, 6.970570, 4.016127, 7.363900, 7.492323, 3.361807, 6.455107~
+## $ mean_oxygen_roms_30 [3m[38;5;246m<dbl>[39m[23m 45.80141, 81.00598, 141.60814, 42.14824, 170.73278, 178.97508, 28.82358, 128.2~
+## $ date                [3m[38;5;246m<date>[39m[23m 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-24, 2003-06-25, 2003-~
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{glimpse}\NormalTok{(substrate)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+## Rows: 20,746
+## Columns: 11
+## $ TRAWL_ID                                           [3m[38;5;246m<dbl>[39m[23m 1.97706e+11, 1.97706e+11, 1.97706e+11, 1.97706e~
+## $ `Length_of_towline_outside_substrate_domain_(m)`   [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,~
+## $ `Length_of_towline_traversing_hard_substrate_(m)`  [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,~
+## $ `Length_of_towline_traversing_mixed_substrate_(m)` [3m[38;5;246m<dbl>[39m[23m 0.00, 0.00, 169.37, 0.00, 0.00, 0.00, 0.00, 0.0~
+## $ `Length_of_towline_traversing_soft_substrate_(m)`  [3m[38;5;246m<dbl>[39m[23m 2628.42, 2484.34, 2899.37, 2570.00, 2639.27, 25~
+## $ `Total_length_of_towline_(m)`                      [3m[38;5;246m<dbl>[39m[23m 2628.42, 2484.34, 3068.74, 2570.00, 2639.27, 25~
+## $ Proportion_outside_substrate_domain                [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,~
+## $ Proportion_hard                                    [3m[38;5;246m<dbl>[39m[23m 0.0000000, 0.0000000, 0.0000000, 0.0000000, 0.0~
+## $ Proportion_mixed                                   [3m[38;5;246m<dbl>[39m[23m 0.00000000, 0.00000000, 0.05519243, 0.00000000,~
+## $ Proportion_soft                                    [3m[38;5;246m<dbl>[39m[23m 1.00000000, 1.00000000, 0.94480757, 1.00000000,~
+## $ prop_hard_mixed                                    [3m[38;5;246m<dbl>[39m[23m 0.00000000, 0.00000000, 0.05519243, 0.00000000,~
+\end{verbatim}
+
+For the ROMS data (for now), we are using modelled temperature and
+oxygen, lagged 30 days from each trawl survey location and time.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{roms_thin <-}\StringTok{ }\NormalTok{roms }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{select}\NormalTok{(station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_}\DecValTok{30}\NormalTok{,mean_oxygen_roms_}\DecValTok{30}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{join-datasets}{%
+\section{Join Datasets}\label{join-datasets}}
+
+\hypertarget{join-trawl-and-roms}{%
+\section{Join Trawl and ROMS}\label{join-trawl-and-roms}}
+
+Join the two datasets together, such that we have the
+appropriately-matched ROMS outputs
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{trawl_roms <-}\StringTok{ }\NormalTok{trawl }\OperatorTok{%>%}\StringTok{ }\KeywordTok{left_join}\NormalTok{(roms,}\DataTypeTok{by =} \KeywordTok{c}\NormalTok{(}\StringTok{"date"}\NormalTok{, }\StringTok{"station"}\NormalTok{, }\StringTok{"roms_hindcast_day"}\NormalTok{)) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{#clean up some columns}
+\StringTok{  }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{select}\NormalTok{(date,trawl_id,station,lon_trawl,lat_trawl,depth_trawl,mean_temp_roms_}\DecValTok{30}\NormalTok{,mean_oxygen_roms_}\DecValTok{30}\NormalTok{,species,cpue_kg_km2) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\CommentTok{# drop any rows with NAs}
+\StringTok{  }\KeywordTok{drop_na}\NormalTok{()}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+  \CommentTok{# test <- trawl %>% left_join(roms,by = c("date", "station", "roms_hindcast_day")) %>% }
+  \CommentTok{#   #clean up some columns}
+  \CommentTok{#   dplyr::select(date,trawl_id,station,lon_trawl,lat_trawl,depth_trawl,temp_roms,oxygen_roms,mean_temp_roms_30,mean_oxygen_roms_30,species,cpue_kg_km2) %>% }
+  \CommentTok{#   # drop any rows with NAs}
+  \CommentTok{#   drop_na()}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{join-trawl-and-substrate}{%
+\subsection{Join Trawl and Substrate}\label{join-trawl-and-substrate}}
+
+Join the substrate data by trawl ID number.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{substrate_thin <-}\StringTok{ }\NormalTok{substrate }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{select}\NormalTok{(TRAWL_ID,prop_hard_mixed)}
+\NormalTok{trawl_roms <-}\StringTok{ }\NormalTok{trawl_roms }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\KeywordTok{left_join}\NormalTok{(substrate_thin,}\DataTypeTok{by=}\KeywordTok{c}\NormalTok{(}\StringTok{'trawl_id'}\NormalTok{=}\StringTok{"TRAWL_ID"}\NormalTok{)) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{  }\KeywordTok{drop_na}\NormalTok{()}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{prepare-data-for-sdmtmb}{%
+\section{Prepare Data for sdmTMB}\label{prepare-data-for-sdmtmb}}
+
+Convert the trawl spatial data to UTM.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{# convert to UTM}
+\NormalTok{trawl_roms_utm <-}\StringTok{ }\NormalTok{trawl_roms }\OperatorTok{%>%}
+\StringTok{  }\CommentTok{# convert to sf object}
+\StringTok{  }\KeywordTok{st_as_sf}\NormalTok{(}\DataTypeTok{coords=}\KeywordTok{c}\NormalTok{(}\StringTok{'lon_trawl'}\NormalTok{,}\StringTok{'lat_trawl'}\NormalTok{),}\DataTypeTok{crs=}\DecValTok{4326}\NormalTok{) }\OperatorTok{%>%}
+\StringTok{  }\CommentTok{# transform to UTM zone 10}
+\StringTok{  }\KeywordTok{st_transform}\NormalTok{(}\DataTypeTok{crs =} \StringTok{"+proj=utm +zone=10 +datum=WGS84 +units=km"}\NormalTok{) }\OperatorTok{%>%}
+\StringTok{  }\CommentTok{# add new coords as vars}
+\StringTok{  }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{latitude =}\NormalTok{ sf}\OperatorTok{::}\KeywordTok{st_coordinates}\NormalTok{(.)[,}\DecValTok{2}\NormalTok{],}
+         \DataTypeTok{longitude =}\NormalTok{ sf}\OperatorTok{::}\KeywordTok{st_coordinates}\NormalTok{(.)[,}\DecValTok{1}\NormalTok{]) }\OperatorTok{%>%}
+\StringTok{  }\CommentTok{# convert back to normal df}
+\StringTok{  }\KeywordTok{st_set_geometry}\NormalTok{(}\OtherTok{NULL}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+We can save this version of the data so we do not have to run the join
+every time.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{write_rds}\NormalTok{(trawl_roms_utm,here}\OperatorTok{::}\KeywordTok{here}\NormalTok{(}\StringTok{'data'}\NormalTok{,}\StringTok{'trawl_roms_joined.rds'}\NormalTok{))}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{functions-to-run-a-model}{%
+\section{Functions to Run a Model}\label{functions-to-run-a-model}}
+
+We'll write two functions, one to prepare a specific species for an
+sdmTMB model, and another to actually run an sdmTMB model with custom
+options
+
+\hypertarget{prepare-species-data}{%
+\subsection{Prepare Species' Data}\label{prepare-species-data}}
+
+This function selects a species' data from the trawl survey data,
+converts the spatial data to UTM, does a couple of filters for missing
+data, and then joins the ROMS hindcast data to it by time and location.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{prepare_species <-}\StringTok{ }\ControlFlowTok{function}\NormalTok{(dat,spp)\{}
+\NormalTok{  dat_sub <-}\StringTok{ }\NormalTok{dat }\OperatorTok{%>%}\StringTok{ }
+\StringTok{    }\KeywordTok{filter}\NormalTok{(species}\OperatorTok{==}\NormalTok{spp) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{    }
+\StringTok{    }\CommentTok{# rescale depth, oxygen, and temp to be N(0,1)}
+\StringTok{    }\KeywordTok{mutate}\NormalTok{(}\KeywordTok{across}\NormalTok{(}\KeywordTok{c}\NormalTok{(depth_trawl,mean_temp_roms_}\DecValTok{30}\NormalTok{,mean_oxygen_roms_}\DecValTok{30}\NormalTok{),}\OperatorTok{~}\NormalTok{(}\KeywordTok{scale}\NormalTok{(.) }\OperatorTok{%>%}\StringTok{ }\KeywordTok{as.vector}\NormalTok{()),}\DataTypeTok{.names=}\StringTok{"\{.col\}_norm"}\NormalTok{)) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{    }
+\StringTok{    }\CommentTok{# add a year indicator}
+\StringTok{    }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{year=}\NormalTok{lubridate}\OperatorTok{::}\KeywordTok{year}\NormalTok{(date))}
+\NormalTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+Try an example for sablefish
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{sablefish_dat <-}\StringTok{ }\KeywordTok{prepare_species}\NormalTok{(trawl_roms_utm,}\DataTypeTok{spp=}\StringTok{"sablefish"}\NormalTok{)}
+\KeywordTok{glimpse}\NormalTok{(sablefish_dat)}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{sdmtmb-model-function}{%
+\subsection{sdmTMB Model Function}\label{sdmtmb-model-function}}
+
+Write a function that runs sdmTMB. It wil call the previous function to
+make the appropriate species data. For now, the environmental variable
+names are not generic (always \texttt{mean\_temp\_roms\_30\_norm} and
+\texttt{mean\_oxygen\_roms\_30\_norm})
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{# nknots=400;use_depth=F;time_vary=F;spatial_field=T;hab_spline=F;env_spline=F;spline_k=3}
+\CommentTok{# rm(time_varying,spatial_field,hab_spline,env_spline,spline_k,modeldat,spde,formula,substrate,enviro,dat,spp,time_formula,time,test_set,nknots,test_cv,use_depth,time_vary)}
+\NormalTok{run_sdmTMB <-}\StringTok{ }\ControlFlowTok{function}\NormalTok{(dat,spp,}\DataTypeTok{nknots=}\DecValTok{400}\NormalTok{,}\DataTypeTok{use_depth=}\NormalTok{F,}\DataTypeTok{time_vary=}\NormalTok{F,}\DataTypeTok{spatial_field=}\NormalTok{T,}\DataTypeTok{hab_spline=}\NormalTok{F,}\DataTypeTok{env_spline=}\NormalTok{F,}\DataTypeTok{spline_k=}\DecValTok{3}\NormalTok{)\{}
+  \CommentTok{# filter data for species}
+\NormalTok{  modeldat <-}\StringTok{ }\KeywordTok{prepare_species}\NormalTok{(dat,}\DataTypeTok{spp=}\NormalTok{spp)}
+  
+  \CommentTok{# make spde}
+\NormalTok{  spde <-}\StringTok{ }\KeywordTok{make_mesh}\NormalTok{(modeldat,}\DataTypeTok{xy_cols =} \KeywordTok{c}\NormalTok{(}\StringTok{'longitude'}\NormalTok{,}\StringTok{'latitude'}\NormalTok{), }
+                   \DataTypeTok{cutoff =} \DecValTok{20}\NormalTok{)}
+  
+  \CommentTok{# model formula}
+\NormalTok{  formula <-}\StringTok{ }\KeywordTok{paste0}\NormalTok{(}\StringTok{"cpue_kg_km2 ~ "}\NormalTok{)}
+  
+  \CommentTok{# substrate relationship}
+\NormalTok{  substrate <-}\StringTok{ }\KeywordTok{paste}\NormalTok{(}\StringTok{"prop_hard_mixed + I(prop_hard_mixed^2)"}\NormalTok{)}
+  \CommentTok{#wiggly habitat relationship?}
+\NormalTok{  substrate <-}\StringTok{ }\KeywordTok{ifelse}\NormalTok{(hab_spline, }\KeywordTok{paste0}\NormalTok{(}\StringTok{"s(prop_hard_mixed,k="}\NormalTok{,spline_k,}\StringTok{")"}\NormalTok{),}
+\NormalTok{                      substrate)}
+  
+  \CommentTok{# make the environmental effects}
+\NormalTok{  enviro <-}\StringTok{ }\KeywordTok{paste}\NormalTok{(}\StringTok{"mean_temp_roms_30_norm + }
+\StringTok{                  I(mean_temp_roms_30_norm^2) + }
+\StringTok{                  mean_oxygen_roms_30_norm + }
+\StringTok{                  I(mean_oxygen_roms_30_norm^2)"}\NormalTok{)}
+  \CommentTok{# wiggly environmental relationships?}
+\NormalTok{  enviro <-}\StringTok{ }\KeywordTok{ifelse}\NormalTok{(env_spline, }\KeywordTok{paste0}\NormalTok{(}\StringTok{"s(mean_temp_roms_30_norm,k="}\NormalTok{,spline_k,}\StringTok{") + "}\NormalTok{,}
+                                      \StringTok{"s(mean_oxygen_roms_30_norm,k="}\NormalTok{,spline_k,}\StringTok{")"}\NormalTok{),}
+\NormalTok{                   enviro)}
+  \CommentTok{# if depth effect, add to model formla}
+  \ControlFlowTok{if}\NormalTok{(use_depth) \{}
+\NormalTok{    formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(formula, }\StringTok{" + depth + I(depth^2)"}\NormalTok{)}
+\NormalTok{  \}}
+  
+\NormalTok{  time_formula =}\StringTok{ "~ -1"}
+  \ControlFlowTok{if}\NormalTok{(time_vary) \{}
+\NormalTok{    time_formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(time_formula, }\StringTok{" + "}\NormalTok{, substrate, }\StringTok{" + "}\NormalTok{, enviro)}
+\NormalTok{    time_varying =}\StringTok{ }\KeywordTok{as.formula}\NormalTok{(time_formula)}
+\NormalTok{    time =}\StringTok{ "year"}
+\NormalTok{  \} }\ControlFlowTok{else}\NormalTok{ \{}
+\NormalTok{    formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(formula, }\StringTok{" + "}\NormalTok{, substrate, }\StringTok{" + "}\NormalTok{, enviro)}
+\NormalTok{    time_varying =}\StringTok{ }\OtherTok{NULL}
+\NormalTok{    time =}\StringTok{ "year"}
+\NormalTok{  \}}
+  
+  \CommentTok{# fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned}
+  \CommentTok{# set.seed(41389) # for reproducibility}
+  \CommentTok{# test_set = sample(1:nrow(modeldat), size = round(0.1*nrow(modeldat)), replace=FALSE)}
+  \CommentTok{# modeldat$fold = 1}
+  \CommentTok{# modeldat$fold[test_set] = 2}
+  \CommentTok{# anisotropy off for now}
+  \KeywordTok{print}\NormalTok{(}\StringTok{'running model.'}\NormalTok{)}
+\NormalTok{  m <-}\StringTok{ }\KeywordTok{try}\NormalTok{( }\KeywordTok{sdmTMB}\NormalTok{(}
+    \DataTypeTok{formula =} \KeywordTok{as.formula}\NormalTok{(formula),}
+    \DataTypeTok{time_varying =}\NormalTok{ time_varying,}
+    \DataTypeTok{spde =}\NormalTok{ spde,}
+    \DataTypeTok{time =}\NormalTok{ time,}
+    \DataTypeTok{family =} \KeywordTok{tweedie}\NormalTok{(}\DataTypeTok{link =} \StringTok{"log"}\NormalTok{),}
+    \DataTypeTok{data =}\NormalTok{ modeldat,}
+    \DataTypeTok{anisotropy =} \OtherTok{FALSE}\NormalTok{,}
+    \DataTypeTok{spatial_only =}\NormalTok{ T,}
+    \CommentTok{#extra_time argument necessary for prediction?}
+    \DataTypeTok{extra_time=}\DecValTok{1980}\OperatorTok{:}\DecValTok{2100}\NormalTok{,}
+    \DataTypeTok{control=}\KeywordTok{sdmTMBcontrol}\NormalTok{(}\DataTypeTok{map_rf=}\KeywordTok{ifelse}\NormalTok{(spatial_field,F,T))}
+\NormalTok{  ),}
+  \DataTypeTok{silent=}\NormalTok{F)}
+
+
+  \CommentTok{# predicted values for the 2nd fold (test)}
+  \CommentTok{# m_cv$data$cv_predicted[which(m_cv$data$cv_fold==2)]}
+  \CommentTok{# log likelihood values for the 2nd fold (test)}
+  \CommentTok{# m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)]}
+
+    \CommentTok{# sum(m_cv$data$cv_loglik[which(m_cv$data$cv_fold==2)])}
+  
+  \CommentTok{# if(class(m)!="try-error") \{}
+  \CommentTok{#   write_rds(m, file=here::here('model output',}
+  \CommentTok{#                                paste0(spp,'.rds')))}
+  \CommentTok{# \}}
+  \ControlFlowTok{if}\NormalTok{(}\KeywordTok{class}\NormalTok{(m)}\OperatorTok{==}\StringTok{"try-error"}\NormalTok{)\{}
+    \KeywordTok{print}\NormalTok{(}\KeywordTok{paste}\NormalTok{(}\StringTok{"Error."}\NormalTok{))}
+\NormalTok{  \}}\ControlFlowTok{else}\NormalTok{\{}
+    \KeywordTok{print}\NormalTok{(}\KeywordTok{paste}\NormalTok{(}\StringTok{"Model for"}\NormalTok{,spp,}\StringTok{"complete."}\NormalTok{))}
+\NormalTok{  \}}
+
+  \CommentTok{# return(m)}
+  \KeywordTok{return}\NormalTok{(m)}
+
+\NormalTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{test <-}\StringTok{ }\KeywordTok{run_sdmTMB}\NormalTok{(}\DataTypeTok{dat=}\NormalTok{trawl_roms_utm,}\DataTypeTok{spp=}\StringTok{"sablefish"}\NormalTok{,}\DataTypeTok{hab_spline =}\NormalTok{ F,}\DataTypeTok{env_spline =}\NormalTok{ F)}
+\end{Highlighting}
+\end{Shaded}
+
+\#\#CV formula
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{library}\NormalTok{(future)}
+\KeywordTok{plan}\NormalTok{(multisession)}
+\NormalTok{run_sdmTMB_cv <-}\StringTok{ }\ControlFlowTok{function}\NormalTok{(dat,spp,}\DataTypeTok{nknots=}\DecValTok{400}\NormalTok{,}\DataTypeTok{use_depth=}\NormalTok{F,}\DataTypeTok{time_vary=}\NormalTok{F,}\DataTypeTok{spatial_field=}\NormalTok{T,}\DataTypeTok{hab_spline=}\NormalTok{F,}\DataTypeTok{env_spline=}\NormalTok{F,}\DataTypeTok{spline_k=}\DecValTok{3}\NormalTok{,}\DataTypeTok{return_what=}\StringTok{'loglik'}\NormalTok{)\{}
+  \CommentTok{# filter data for species}
+\NormalTok{  modeldat <-}\StringTok{ }\KeywordTok{prepare_species}\NormalTok{(dat,}\DataTypeTok{spp=}\NormalTok{spp)}
+  
+  \CommentTok{# make spde}
+\NormalTok{  spde <-}\StringTok{ }\KeywordTok{make_mesh}\NormalTok{(modeldat,}\DataTypeTok{xy_cols =} \KeywordTok{c}\NormalTok{(}\StringTok{'longitude'}\NormalTok{,}\StringTok{'latitude'}\NormalTok{), }
+                   \DataTypeTok{cutoff =} \DecValTok{20}\NormalTok{)}
+  
+  \CommentTok{# model formula}
+\NormalTok{  formula <-}\StringTok{ }\KeywordTok{paste0}\NormalTok{(}\StringTok{"cpue_kg_km2 ~ "}\NormalTok{)}
+  
+  \CommentTok{# substrate relationship}
+\NormalTok{  substrate <-}\StringTok{ }\KeywordTok{paste}\NormalTok{(}\StringTok{"prop_hard_mixed + I(prop_hard_mixed^2)"}\NormalTok{)}
+  \CommentTok{#wiggly habitat relationship?}
+\NormalTok{  substrate <-}\StringTok{ }\KeywordTok{ifelse}\NormalTok{(hab_spline, }\KeywordTok{paste0}\NormalTok{(}\StringTok{"s(prop_hard_mixed,k="}\NormalTok{,spline_k,}\StringTok{")"}\NormalTok{),}
+\NormalTok{                      substrate)}
+  
+  \CommentTok{# make the environmental effects}
+\NormalTok{  enviro <-}\StringTok{ }\KeywordTok{paste}\NormalTok{(}\StringTok{"mean_temp_roms_30_norm + I(mean_temp_roms_30_norm^2) + mean_oxygen_roms_30_norm + I(mean_oxygen_roms_30_norm^2)"}\NormalTok{)}
+  \CommentTok{# wiggly environmental relationships?}
+\NormalTok{  enviro <-}\StringTok{ }\KeywordTok{ifelse}\NormalTok{(env_spline, }\KeywordTok{paste0}\NormalTok{(}\StringTok{"s(mean_temp_roms_30_norm,k="}\NormalTok{,spline_k,}\StringTok{") + "}\NormalTok{,}
+                                      \StringTok{"s(mean_oxygen_roms_30_norm,k="}\NormalTok{,spline_k,}\StringTok{")"}\NormalTok{),}
+\NormalTok{                   enviro)}
+  \CommentTok{# if depth effect, add to model formla}
+  \ControlFlowTok{if}\NormalTok{(use_depth) \{}
+\NormalTok{    formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(formula, }\StringTok{" + depth + I(depth^2)"}\NormalTok{)}
+\NormalTok{  \}}
+  
+\NormalTok{  time_formula =}\StringTok{ "~ -1"}
+  
+  \ControlFlowTok{if}\NormalTok{(time_vary) \{}
+\NormalTok{    time_formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(time_formula, }\StringTok{" + "}\NormalTok{, substrate, }\StringTok{" + "}\NormalTok{, enviro)}
+\NormalTok{    time_varying =}\StringTok{ }\KeywordTok{as.formula}\NormalTok{(time_formula)}
+\NormalTok{    time =}\StringTok{ "year"}
+\NormalTok{  \} }\ControlFlowTok{else}\NormalTok{ \{}
+\NormalTok{    formula =}\StringTok{ }\KeywordTok{paste0}\NormalTok{(formula, }\StringTok{" + "}\NormalTok{, substrate, }\StringTok{" + "}\NormalTok{, enviro)}
+\NormalTok{    time_varying =}\StringTok{ }\OtherTok{NULL}
+\NormalTok{    time =}\StringTok{ "year"}
+\NormalTok{  \}}
+  
+  \CommentTok{# fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned}
+  \KeywordTok{set.seed}\NormalTok{(}\DecValTok{41389}\NormalTok{) }\CommentTok{# for reproducibility}
+\NormalTok{  test_set =}\StringTok{ }\KeywordTok{sample}\NormalTok{(}\DecValTok{1}\OperatorTok{:}\KeywordTok{nrow}\NormalTok{(modeldat), }\DataTypeTok{size =} \KeywordTok{round}\NormalTok{(}\FloatTok{0.1}\OperatorTok{*}\KeywordTok{nrow}\NormalTok{(modeldat)), }\DataTypeTok{replace=}\OtherTok{FALSE}\NormalTok{)}
+\NormalTok{  modeldat}\OperatorTok{$}\NormalTok{fold =}\StringTok{ }\DecValTok{1}
+\NormalTok{  modeldat}\OperatorTok{$}\NormalTok{fold[test_set] =}\StringTok{ }\DecValTok{2} 
+  
+  \KeywordTok{print}\NormalTok{(}\StringTok{'running 2-fold CV.'}\NormalTok{)}
+  
+\NormalTok{  m_cv <-}\StringTok{ }\KeywordTok{try}\NormalTok{( }\KeywordTok{sdmTMB_cv}\NormalTok{( }
+    \DataTypeTok{formula =} \KeywordTok{as.formula}\NormalTok{(formula),}
+    \DataTypeTok{k_folds=}\DecValTok{2}\NormalTok{,}
+    \DataTypeTok{parallel =} \OtherTok{TRUE}\NormalTok{,}
+    \DataTypeTok{fold_ids =}\NormalTok{ modeldat}\OperatorTok{$}\NormalTok{fold,}
+    \DataTypeTok{time_varying =}\NormalTok{ time_varying,}
+    \DataTypeTok{spde =}\NormalTok{ spde,}
+    \DataTypeTok{time =}\NormalTok{ time,}
+    \DataTypeTok{family =} \KeywordTok{tweedie}\NormalTok{(}\DataTypeTok{link =} \StringTok{"log"}\NormalTok{),}
+    \DataTypeTok{data =}\NormalTok{ modeldat,}
+    \DataTypeTok{anisotropy =} \OtherTok{FALSE}\NormalTok{,}
+    \DataTypeTok{spatial_only =}\NormalTok{ T,}
+    \CommentTok{#extra_time argument necessary for prediction?}
+    \CommentTok{# extra_time=1980:2100,}
+    \DataTypeTok{control=}\KeywordTok{sdmTMBcontrol}\NormalTok{(}\DataTypeTok{map_rf=}\KeywordTok{ifelse}\NormalTok{(spatial_field,F,T))}
+\NormalTok{  ),}
+  \DataTypeTok{silent=}\NormalTok{T)}
+  \ControlFlowTok{if}\NormalTok{(}\KeywordTok{class}\NormalTok{(m_cv)}\OperatorTok{==}\StringTok{'try-error'}\NormalTok{)\{}
+    \KeywordTok{print}\NormalTok{(}\KeywordTok{paste}\NormalTok{(}\StringTok{'Error.'}\NormalTok{))}
+\NormalTok{  \} }\ControlFlowTok{else}\NormalTok{\{}
+    \CommentTok{# tem <- m_cv %>% pluck('data')}
+    \CommentTok{# print(paste('data is class',class(tem)))}
+\NormalTok{    total_pred_ll =}\StringTok{ }\NormalTok{m_cv }\OperatorTok{%>%}\StringTok{ }
+\StringTok{      }\KeywordTok{pluck}\NormalTok{(}\StringTok{'data'}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{      }\NormalTok{dplyr}\OperatorTok{::}\KeywordTok{filter}\NormalTok{(cv_fold}\OperatorTok{==}\DecValTok{2}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{      }\KeywordTok{pluck}\NormalTok{(}\StringTok{'cv_loglik'}\NormalTok{) }\OperatorTok{%>%}\StringTok{ }
+\StringTok{      }\KeywordTok{sum}\NormalTok{()}
+    \ControlFlowTok{if}\NormalTok{(return_what}\OperatorTok{==}\StringTok{'model'}\NormalTok{) }\KeywordTok{return}\NormalTok{(m_cv)}
+    \ControlFlowTok{else} \KeywordTok{return}\NormalTok{(total_pred_ll)}
+\NormalTok{  \}}
+\NormalTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{test_cv <-}\StringTok{ }\KeywordTok{run_sdmTMB_cv}\NormalTok{(}\DataTypeTok{dat=}\NormalTok{trawl_roms_utm,}\DataTypeTok{spp=}\StringTok{'sablefish'}\NormalTok{,}\DataTypeTok{return_what =} \StringTok{'model'}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\hypertarget{cross-validation-options}{%
+\subsection{Cross Validation options}\label{cross-validation-options}}
+
+If we wanted to use cross validation, we could do that in a couple ways.
+For example, with a single train/test split, we could assign 10\% of the
+observations to the test set and not fit the model for all the folds
+(fitting to all folds is the default in sdmTMB\_cv).
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{set.seed}\NormalTok{(}\DecValTok{41389}\NormalTok{) }\CommentTok{# for reproducibility}
+\NormalTok{test_set =}\StringTok{ }\KeywordTok{sample}\NormalTok{(}\DecValTok{1}\OperatorTok{:}\KeywordTok{nrow}\NormalTok{(modeldat), }\DataTypeTok{size =} \KeywordTok{round}\NormalTok{(}\FloatTok{0.1}\OperatorTok{*}\KeywordTok{nrow}\NormalTok{(modeldat)), }\DataTypeTok{replace=}\OtherTok{FALSE}\NormalTok{)}
+\NormalTok{modeldat}\OperatorTok{$}\NormalTok{fold =}\StringTok{ }\DecValTok{1}
+\NormalTok{modeldat}\OperatorTok{$}\NormalTok{fold[test_set] =}\StringTok{ }\DecValTok{2}
+\KeywordTok{head}\NormalTok{(modeldat}\OperatorTok{$}\NormalTok{fold,}\DecValTok{25}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+Alternatively we could do something like assign all points for a given
+year (e.g.~2018) to the test set.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{# modeldat$fold = ifelse(modeldat$year=="2018",2,1)}
+\end{Highlighting}
+\end{Shaded}
+
+A third option is to use blockCV to assign the folds. If you have raster
+data, there's a few functions in that package (spatialAutoRange,
+rangeExplorer) to estimate the range -- but because those are probably
+difficult to estimate with the kind of data we have, I've generally used
+ranges in the 50-75km, which is about what's estimated for many WCBTS
+species.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{the_data <-}\StringTok{ }\NormalTok{sf}\OperatorTok{::}\KeywordTok{st_as_sf}\NormalTok{(modeldat, }\DataTypeTok{coords =} \KeywordTok{c}\NormalTok{(}\StringTok{"longitude"}\NormalTok{, }\StringTok{"latitude"}\NormalTok{),}\DataTypeTok{crs=}\StringTok{"+proj=utm +zone=10 +datum=WGS84 +units=km"}\NormalTok{)}
+\NormalTok{sb <-}\StringTok{ }\KeywordTok{spatialBlock}\NormalTok{(}
+    \DataTypeTok{speciesData =}\NormalTok{ the_data,}
+    \DataTypeTok{species =} \StringTok{"xxxxx"}\NormalTok{,}
+    \DataTypeTok{theRange =} \DecValTok{5000}\NormalTok{, }\CommentTok{# range should be in meters}
+    \CommentTok{# k = 10,}
+    \DataTypeTok{selection =} \StringTok{"systematic"}\NormalTok{,}
+    \DataTypeTok{showBlocks =} \OtherTok{FALSE}
+\NormalTok{  )}
+\NormalTok{modeldat}\OperatorTok{$}\NormalTok{fold =}\StringTok{ }\KeywordTok{ifelse}\NormalTok{(sb}\OperatorTok{$}\NormalTok{fold}\OperatorTok{==}\DecValTok{1}\NormalTok{,}\DecValTok{2}\NormalTok{,}\DecValTok{1}\NormalTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+And then we can use sdmTMB\_cv to do the estimation for each fold.
+Because we did the test-train split, we'll fit the model 2x, but just be
+interested in the 1st fit.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{m_cv <-}\StringTok{ }\KeywordTok{try}\NormalTok{( }\KeywordTok{sdmTMB_cv}\NormalTok{( }
+    \DataTypeTok{formula =} \KeywordTok{as.formula}\NormalTok{(formula),}
+    \CommentTok{# time_varying = time_varying,}
+    \DataTypeTok{spde =}\NormalTok{ spde,}
+    \DataTypeTok{k_folds =} \DecValTok{2}\NormalTok{,}
+    \DataTypeTok{fold_ids =} \StringTok{"fold"}\NormalTok{,}
+    \DataTypeTok{time =} \StringTok{'year'}\NormalTok{,}
+    \DataTypeTok{family =} \KeywordTok{tweedie}\NormalTok{(}\DataTypeTok{link =} \StringTok{"log"}\NormalTok{),}
+    \DataTypeTok{data =}\NormalTok{ modeldat,}
+    \DataTypeTok{anisotropy =} \OtherTok{FALSE}\NormalTok{,}
+    \DataTypeTok{spatial_only =}\NormalTok{ T,}
+    \CommentTok{#extra_time argument necessary for prediction?}
+    \DataTypeTok{extra_time=}\DecValTok{1980}\OperatorTok{:}\DecValTok{2100}\NormalTok{,}
+    \DataTypeTok{map_rf=}\NormalTok{T}
+    \CommentTok{# map_rf=ifelse(spatial_field,F,T)}
+\NormalTok{  ), }
+  \DataTypeTok{silent=}\OtherTok{TRUE}\NormalTok{)}
+
+\CommentTok{# predicted values for the 2nd fold (test)}
+\NormalTok{m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_predicted[}\KeywordTok{which}\NormalTok{(m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_fold}\OperatorTok{==}\DecValTok{2}\NormalTok{)]}
+\CommentTok{# log likelihood values for the 2nd fold (test)}
+\NormalTok{m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_loglik[}\KeywordTok{which}\NormalTok{(m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_fold}\OperatorTok{==}\DecValTok{2}\NormalTok{)]}
+
+\NormalTok{total_pred_ll =}\StringTok{ }\KeywordTok{sum}\NormalTok{(m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_loglik[}\KeywordTok{which}\NormalTok{(m_cv}\OperatorTok{$}\NormalTok{data}\OperatorTok{$}\NormalTok{cv_fold}\OperatorTok{==}\DecValTok{2}\NormalTok{)])}
+\end{Highlighting}
+\end{Shaded}
+
+This is the end of this script. Moving the actual modelling (i.e., the
+calling of this function) to a new script.
+
+\end{document}

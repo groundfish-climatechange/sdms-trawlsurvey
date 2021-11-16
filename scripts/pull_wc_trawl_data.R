@@ -61,7 +61,8 @@ cope_haltuch = c("aurora rockfish", "big skate", "bigfin eelpout",
 
 # these are additional species on the prioritization spreadsheet
 fram = c(cope_haltuch, "vermilion and sunset rockfish",
-         "black rockfish", "cowcod","copper rockfish",
+         "black rockfish",'california halibut',
+         "cowcod","copper rockfish",
          "brown rockfish","quillback rockfish",
          "redbanded rockfish","tree rockfish",
          "squarespot rockfish","starry rockfish",

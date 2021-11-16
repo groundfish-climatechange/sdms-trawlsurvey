@@ -3,8 +3,8 @@ title: "Run sdmTMB"
 author: "Owen Liu"
 date: "6/8/2021"
 output:
-  pdf_document:
-    toc: yes
+  # pdf_document:
+  #   toc: yes
   html_document:
     toc: yes
     toc_float: yes
