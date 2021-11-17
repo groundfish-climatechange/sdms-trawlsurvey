@@ -45,6 +45,24 @@ Load functions from projection script
 rmarkdown::render(here::here('scripts','sdmTMB_projection.Rmd'),quiet=TRUE)
 ```
 
+# Landings and Value
+
+```{r}
+v <- read_csv(here('data','dts_landings.csv'))
+v %>% 
+  rename(name=`NMFS Name`) %>% 
+  mutate(Year=as.integer(Year)) %>% 
+  mutate(lab=case_when(
+    name=="SABLEFISH" ~ "Sablefish",
+    name=="SOLE, DOVER" ~ "Dover Sole",
+    name=="THORNYHEAD, LONGSPINE" ~ "Longspine Thornyhead"
+  )) %>% 
+  ggplot(aes(Year,Dollars/1e6,color=lab))+geom_line(size=1.5)+
+  labs(x="Year",y="Landings (Million $)",color="")+
+  scale_x_continuous(breaks=seq(2010,2020,by=2))+
+  theme(legend.position = c(0.8,0.9))
+```
+
 # Produce ensemble predictions for DTS
 
 Use IPSL ESM for now
@@ -68,6 +86,23 @@ ls2100 <- map_year(ls_ens,yr_vec=2100,return_pred_df=T)%>% rename(ls=est)
 ```
 
 
+# Ensemble Abundance and COG
+
+```{r}
+make_index(dover_models)
+```
+```{r}
+make_index(sable_models)
+```
+```{r}
+make_index(ls_models)
+```
+```{r}
+dover_cog <- make_cog(dover_models,what="dat")
+sable_cog <- make_cog(sable_models,what="dat")
+ls_cog <- make_cog(ls_models,what="dat")
+```
+
 # Maps
 
 ```{r}
@@ -85,15 +120,91 @@ plot_grid(dover2100_map,sable2100_map,ls2100_map,nrow=1)
 
 # Calculate Overlap Over Time
 
-Pairwise range overlap (Hurlbert's index)
+Schoener's D measures spatial niche overlap, or how two species use space relative to its availability.
 
-$$ H = \sum_{1}^{n}\frac{p_{1,i}*p_{2,i}}{A_i/A_{tot}}$$
-where $p_{1,i}$ is the proportion of species 1 abundance in grid cell $i$, and $A_i$ is the area of grid cell $i$ relative to the total number of grid cells $A_{tot}$. For our purposes, there are 1032 identically-sized grid cells, so $A_i/A_{tot} = 1/1032$
+$$1 - 0.5*\sum_{1}^{n}{|p_{1,i}-p_{2,i}|}$$
+
 
 Also calculating an index of local collocation, 
 
 $$ L = \frac{\sum_{1}^{n}{p_{1,i}}*p_{2,i}}{\sqrt{{\sum_{1}^{n}p_{1,i}^2}{\sum_{1}^{n}p_{2,i}^2}}}$$
 which describes the correlation between two ranges. It ranges between 0 and 1 and can be thought of as the ratio of the probability of finding two species in the same area to the total probability of finding either species.
+
+...and an index of global collocation, from Bez and Rivoirard (2000) and Carroll et al. (2019), measuring more regional-scale overlap by comparing centers of gravity and inertia/dispersion of each species' range.
+
+```{r}
+# Version from Gemma's 2019 paper
+# glob_collocfn <- function(prey_x, prey_y, prey, pred_x, pred_y, pred){
+#   prey_cgx <- sum(prey_x*prey, na.rm = T)/sum(prey, na.rm = T)
+#   prey_cgy <- sum(prey_y*prey, na.rm = T)/sum(prey, na.rm = T)
+#   prey_ix <- prey_x - prey_cgx
+#   prey_iy <- prey_y - prey_cgy
+#   prey_i <- sqrt(prey_ix^2 + prey_iy^2)
+#   prey_inert <- sum(prey * (prey_i^2), na.rm = T)/sum(prey, na.rm = T)
+#   pred_cgx <- sum(pred_x*pred, na.rm = T)/sum(pred, na.rm = T)
+#   pred_cgy <- sum(pred_y*pred, na.rm = T)/sum(pred, na.rm = T)
+#   pred_ix <- pred_x - pred_cgx
+#   pred_iy <- pred_y - pred_cgy
+#   pred_i <- sqrt(pred_ix^2 + pred_iy^2)
+#   pred_inert <- sum(pred * (pred_i^2), na.rm = T)/sum(pred, na.rm = T)
+#   GIC <- (((prey_cgx - pred_cgx)^2+(prey_cgy - pred_cgy)^2)/ (((prey_cgx-pred_cgx)^2+(prey_cgy-pred_cgy)^2)+prey_inert + pred_inert))
+#   if(!is.na(GIC))
+#     GIC <- 1-GIC
+#   else GIC <- 1
+#   GIC
+# }
+
+# Edited to use with COGS calculated from sdmTMB, for species k and j
+
+gic <- function(dat1,dat2,cog1,cog2){
+  k_x <- dat1$longitude
+  k_y <- dat1$latitude
+  k <- dat1$ens_est
+  k_cogx <- cog1$w.est_x
+  k_cogy <- cog1$w.est_y
+  j_x <- dat2$longitude
+  j_y <- dat2$latitude
+  j <- dat2$ens_est
+  j_cogx <- cog2$w.est_x
+  j_cogy <- cog2$w.est_y
+  
+  k_ix <- k_x-k_cogx
+  k_iy <- k_y-k_cogy
+  k_i <- sqrt(k_ix^2+k_iy^2)
+  k_inert <- sum(k*(k_i^2),na.rm=T)/sum(k,na.rm=T)
+  
+  j_ix <- j_x-j_cogx
+  j_iy <- j_y-j_cogy
+  j_i <- sqrt(j_ix^2+j_iy^2)
+  j_inert <- sum(j*(j_i^2),na.rm=T)/sum(j,na.rm=T)
+  
+  GIC <- (((k_cogx - j_cogx)^2+(k_cogy - j_cogy)^2)/ (((k_cogx-j_cogx)^2+(k_cogy-j_cogy)^2)+k_inert + j_inert))
+  if(!is.na(GIC))
+    GIC <- 1-GIC
+  else GIC <- 1
+  GIC
+}
+
+```
+
+```{r}
+ens_est_gic <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth_m, ens_est)) %>% 
+  # join all the data and cogs nested by year
+  left_join(sable_ens %>% nest(sable = c(longitude, latitude, lat, lon, depth_m, ens_est))) %>% 
+  left_join(ls_ens %>% nest(ls = c(longitude, latitude, lat, lon, depth_m, ens_est))) %>% 
+  left_join(dover_cog %>% nest(dover_cog=c(w.est_x,w.est_y)))%>% 
+  left_join(sable_cog %>% nest(sable_cog=c(w.est_x,w.est_y)))%>% 
+  left_join(ls_cog %>% nest(ls_cog=c(w.est_x,w.est_y))) %>% 
+  # calculate the gic
+  mutate(dover_sable_gic=purrr::pmap_dbl(list(dat1=dover,dat2=sable,cog1=dover_cog,cog2=sable_cog),gic)) %>% 
+  mutate(dover_ls_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ls,cog1=dover_cog,cog2=ls_cog),gic)) %>% 
+  mutate(sable_ls_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ls,cog1=sable_cog,cog2=ls_cog),gic))
+
+ens_est_gic_plot <- ens_est_gic %>% 
+  dplyr::select(year,contains('gic'))
+```
+
+
 
 ```{r}
 dover_prop <- dover_ens %>%
@@ -119,25 +230,9 @@ all_prop <- dover_prop %>%
   left_join(ls_prop)
 
 n_cells <- all_prop %>% distinct(lat,lon) %>% nrow()
+```
 
-# Hurlbert's index
-
-all_hurl <- all_prop %>% 
-  mutate(dover_sable=doverprop*sableprop/(1/n_cells),
-         dover_ls=doverprop*lsprop/(1/n_cells),
-         sable_ls=sableprop*lsprop/(1/n_cells)) %>% 
-  group_by(year) %>% 
-  summarise(dover_sable_hurl=sum(dover_sable),
-            dover_ls_hurl = sum(dover_ls),
-            sable_ls_hurl= sum(sable_ls)) %>% 
-  ungroup()
-
-all_hurl %>% 
-  pivot_longer(dover_sable_hurl:sable_ls_hurl,values_to='hurl') %>% 
-  ggplot(aes(x=year,hurl,col=name))+
-  scale_y_continuous(limits=c(0,10),breaks=seq(0,10,by=2))+
-  geom_line()
-
+```{r}
 # Local index of collocation
 all_loc <- all_prop %>% 
   mutate(dover_sable=doverprop*sableprop,
@@ -190,22 +285,6 @@ dover_indices %>%
   labs(x="Year",y="Ensemble Index of Abundance",color="Model")
 ```
 
-# Ensemble Abundance and COG
-
-```{r}
-make_index(dover_models)
-```
-```{r}
-make_index(sable_models)
-```
-```{r}
-make_index(ls_models)
-```
-```{r}
-make_cog(dover_models)
-make_cog(sable_models)
-make_cog(ls_models)
-```
 ## Env Affinities
 
 Dover
@@ -268,23 +347,5 @@ three_spp <- dover_ens %>% rename(dover=ens_est) %>%
 #   ggplot(aes(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,z=rel_abun,group=species))+
 #   geom_contour_filled()+
 #   labs(x="Temperature",y="Oxygen (mmol/m3)")
-```
-
-# Landings and Value
-
-```{r}
-v <- read_csv(here('data','dts_landings.csv'))
-v %>% 
-  rename(name=`NMFS Name`) %>% 
-  mutate(Year=as.integer(Year)) %>% 
-  mutate(lab=case_when(
-    name=="SABLEFISH" ~ "Sablefish",
-    name=="SOLE, DOVER" ~ "Dover Sole",
-    name=="THORNYHEAD, LONGSPINE" ~ "Longspine Thornyhead"
-  )) %>% 
-  ggplot(aes(Year,Dollars/1e6,color=lab))+geom_line(size=1.5)+
-  labs(x="Year",y="Landings (Million $)",color="")+
-  scale_x_continuous(breaks=seq(2010,2020,by=2))+
-  theme(legend.position = c(0.8,0.9))
 ```
 

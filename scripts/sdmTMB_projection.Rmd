@@ -419,7 +419,7 @@ make_index(dover_models)
 Plot center of gravity over time
 
 ```{r}
-make_cog <- function(model_df,gcm='hadl'){
+make_cog <- function(model_df,gcm='hadl',what="plot"){
   future::plan(multisession)
   
   sppname <- unique(model_df$spp) %>% tools::toTitleCase()
@@ -492,7 +492,7 @@ make_cog <- function(model_df,gcm='hadl'){
       xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
 
   out <- plot_grid(cog_spatial,cog2d_timeseries,ncol=2)
-  out
+  if(what=="plot") return(out) else return(cog_2d)
 }
 ```
 
