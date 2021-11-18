@@ -75,7 +75,27 @@ ls_models <- read_rds(here::here('model output','longspine thornyhead models.rds
 dover_ens <- ensemble_predictions(dover_models,gcm='ipsl')
 sable_ens <- ensemble_predictions(sable_models,gcm='ipsl')
 ls_ens <- ensemble_predictions(ls_models,gcm='ipsl')
+```
 
+# Ensemble Abundance and COG
+
+```{r}
+make_index(dover_models)
+
+make_index(sable_models)
+
+make_index(ls_models)
+```
+
+```{r}
+dover_cog <- make_cog(dover_models,what="dat")
+sable_cog <- make_cog(sable_models,what="dat")
+ls_cog <- make_cog(ls_models,what="dat")
+```
+
+# Maps
+
+```{r}
 dover2021 <- map_year(dover_ens,yr_vec=2021,return_pred_df=T) %>% rename(dover=est)
 sable2021 <- map_year(sable_ens,yr_vec=2021,return_pred_df=T)%>% rename(sable=est)
 ls2021 <- map_year(ls_ens,yr_vec=2021,return_pred_df=T)%>% rename(ls=est)
@@ -84,26 +104,6 @@ dover2100 <- map_year(dover_ens,yr_vec=2100,return_pred_df=T)%>% rename(dover=es
 sable2100 <- map_year(sable_ens,yr_vec=2100,return_pred_df=T)%>% rename(sable=est)
 ls2100 <- map_year(ls_ens,yr_vec=2100,return_pred_df=T)%>% rename(ls=est)
 ```
-
-
-# Ensemble Abundance and COG
-
-```{r}
-make_index(dover_models)
-```
-```{r}
-make_index(sable_models)
-```
-```{r}
-make_index(ls_models)
-```
-```{r}
-dover_cog <- make_cog(dover_models,what="dat")
-sable_cog <- make_cog(sable_models,what="dat")
-ls_cog <- make_cog(ls_models,what="dat")
-```
-
-# Maps
 
 ```{r}
 dover2021_map <- map_year(dover_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)
@@ -131,6 +131,27 @@ $$ L = \frac{\sum_{1}^{n}{p_{1,i}}*p_{2,i}}{\sqrt{{\sum_{1}^{n}p_{1,i}^2}{\sum_{
 which describes the correlation between two ranges. It ranges between 0 and 1 and can be thought of as the ratio of the probability of finding two species in the same area to the total probability of finding either species.
 
 ...and an index of global collocation, from Bez and Rivoirard (2000) and Carroll et al. (2019), measuring more regional-scale overlap by comparing centers of gravity and inertia/dispersion of each species' range.
+
+```{r}
+#Schoener's D
+schoeners <- function(dat1, dat2) {
+  p1 <- dat1$ens_est
+  p2 <- dat2$ens_est
+  p_p1 <- p1/sum(p1, na.rm = T)
+  p_p2 <- p2/sum(p2, na.rm = T)
+  1 - 0.5 * (sum(abs(p_p1-p_p2), na.rm = T))
+}
+```
+
+```{r}
+lic <- function(dat1,dat2) {
+  p1 <- dat1$ens_est
+  p2 <- dat2$ens_est
+  p_p1 <- p1/sum(p1, na.rm = T)
+  p_p2 <- p2/sum(p2, na.rm = T)
+  sum(p_p1*p_p2, na.rm = T)/(sqrt(sum(p_p1^2, na.rm = T)*sum(p_p2^2, na.rm = T)))
+}
+```
 
 ```{r}
 # Version from Gemma's 2019 paper
@@ -188,7 +209,7 @@ gic <- function(dat1,dat2,cog1,cog2){
 ```
 
 ```{r}
-ens_est_gic <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth_m, ens_est)) %>% 
+ens_est_overlaps <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth_m, ens_est)) %>% 
   # join all the data and cogs nested by year
   left_join(sable_ens %>% nest(sable = c(longitude, latitude, lat, lon, depth_m, ens_est))) %>% 
   left_join(ls_ens %>% nest(ls = c(longitude, latitude, lat, lon, depth_m, ens_est))) %>% 
@@ -198,53 +219,24 @@ ens_est_gic <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth
   # calculate the gic
   mutate(dover_sable_gic=purrr::pmap_dbl(list(dat1=dover,dat2=sable,cog1=dover_cog,cog2=sable_cog),gic)) %>% 
   mutate(dover_ls_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ls,cog1=dover_cog,cog2=ls_cog),gic)) %>% 
-  mutate(sable_ls_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ls,cog1=sable_cog,cog2=ls_cog),gic))
+  mutate(sable_ls_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ls,cog1=sable_cog,cog2=ls_cog),gic)) %>% 
+    # calculate Schoener's D
+  mutate(dover_sable_sch=purrr::pmap_dbl(list(dat1=dover,dat2=sable),schoeners)) %>% 
 
-ens_est_gic_plot <- ens_est_gic %>% 
-  dplyr::select(year,contains('gic'))
+  mutate(dover_ls_sch=purrr::pmap_dbl(list(dat1=dover,dat2=ls),schoeners)) %>% 
+  mutate(sable_ls_sch=purrr::pmap_dbl(list(dat1=sable,dat2=ls),schoeners)) %>% 
+  # calculate local colocation
+  mutate(dover_sable_loc=purrr::pmap_dbl(list(dat1=dover,dat2=sable),lic)) %>% 
+
+  mutate(dover_ls_loc=purrr::pmap_dbl(list(dat1=dover,dat2=ls),lic)) %>% 
+  mutate(sable_ls_loc=purrr::pmap_dbl(list(dat1=sable,dat2=ls),lic))
+
 ```
-
-
+## Local Index of Co-location
 
 ```{r}
-dover_prop <- dover_ens %>%
-  group_by(year) %>% 
-  mutate(doverprop=ens_est/sum(ens_est)) %>% 
-  ungroup() %>% 
-  select(year,lat,lon,doverprop)
-
-sable_prop <- sable_ens %>%
-  group_by(year) %>% 
-  mutate(sableprop=ens_est/sum(ens_est))%>% 
-  ungroup() %>% 
-  select(year,lat,lon,sableprop)
-
-ls_prop <- ls_ens %>%
-  group_by(year) %>% 
-  mutate(lsprop=ens_est/sum(ens_est))%>% 
-  ungroup() %>% 
-  select(year,lat,lon,lsprop)
-
-all_prop <- dover_prop %>% 
-  left_join(sable_prop) %>% 
-  left_join(ls_prop)
-
-n_cells <- all_prop %>% distinct(lat,lon) %>% nrow()
-```
-
-```{r}
-# Local index of collocation
-all_loc <- all_prop %>% 
-  mutate(dover_sable=doverprop*sableprop,
-         dover_ls=doverprop*lsprop,
-         sable_ls=sableprop*lsprop) %>% 
-  group_by(year) %>% 
-  summarise(dover_sable_loc=sum(dover_sable)/sqrt(sum(doverprop^2)*sum(sableprop^2)),
-            dover_ls_loc = sum(dover_ls)/sqrt(sum(doverprop^2)*sum(lsprop^2)),
-            sable_ls_loc= sum(sable_ls)/sqrt(sum(sableprop^2)*sum(lsprop^2))) %>% 
-  ungroup()
-
-all_loc %>% 
+ens_est_overlaps %>% 
+  dplyr::select(year,dover_sable_loc:sable_ls_loc) %>% 
   pivot_longer(dover_sable_loc:sable_ls_loc,values_to='loc') %>% 
   mutate(lab=case_when(
     name=="dover_sable_loc" ~ "Dover Sole/Sablefish",
@@ -258,7 +250,44 @@ all_loc %>%
         legend.background = element_rect(color='black'))+
   labs(x="Year",y="Index of Collocation",color="Species Pair")
 ```
+## Global Index of Co-location
 
+```{r}
+ens_est_overlaps %>% 
+  dplyr::select(year,dover_sable_gic:sable_ls_gic) %>% 
+  pivot_longer(dover_sable_gic:sable_ls_gic,values_to='gic') %>% 
+  mutate(lab=case_when(
+    name=="dover_sable_gic" ~ "Dover Sole/Sablefish",
+    name=="dover_ls_gic" ~ "Dover Sole/Thornyhead",
+    name=="sable_ls_gic" ~ "Sablefish/Thornyhead"
+  )) %>% 
+  filter(year>2020) %>% 
+  ggplot(aes(x=year,gic,col=lab))+
+  geom_line(size=1.5)+
+  scale_y_continuous(limits = c(0,1))+
+  theme(legend.position=c(0.8,0.75),
+        legend.background = element_rect(color='black'))+
+  labs(x="Year",y="Global Index of Collocation",color="Species Pair")
+```
+
+## Schoener's D
+
+```{r}
+ens_est_overlaps %>% 
+  dplyr::select(year,dover_sable_sch:sable_ls_sch) %>% 
+  pivot_longer(dover_sable_sch:sable_ls_sch,values_to='sch') %>% 
+  mutate(lab=case_when(
+    name=="dover_sable_sch" ~ "Dover Sole/Sablefish",
+    name=="dover_ls_sch" ~ "Dover Sole/Thornyhead",
+    name=="sable_ls_sch" ~ "Sablefish/Thornyhead"
+  )) %>% 
+  filter(year>2020) %>% 
+  ggplot(aes(x=year,sch,col=lab))+
+  geom_line(size=1.5)+
+  theme(legend.position=c(0.8,0.75),
+        legend.background = element_rect(color='black'))+
+  labs(x="Year",y="Schoener's D",color="Species Pair")
+```
 
 # Dover sole inter-model comparison
 
