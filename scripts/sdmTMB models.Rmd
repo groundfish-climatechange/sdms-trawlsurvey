@@ -95,15 +95,9 @@ species <- trawl_roms_utm %>%
   slice_max(order_by = meancpue,n=10)
 species
 
-# for Steph Brodie 10/21
-species <- tibble(species=c("blue rockfish","california halibut"))
 ```
 
 Run models and save cross-validation model stacking weights
-
-```{r}
-
-```
 
 ```{r}
 plan(multisession)
@@ -114,6 +108,14 @@ for(i in 1:length(species$species)){
   print(paste(s,'models finished'))
 }
 ```
+
+```{r,eval=F}
+# 12/03/21 running combined thornyheads
+s <- "combined thornyheads"
+m <- model_species(s)
+write_rds(m,here::here('model output',paste(s,'models.rds')))
+```
+
 
 
 ```{r}
@@ -129,7 +131,7 @@ for(i in 1:length(species$species)){
 
 Save model outputs as an .rds
 
-```{r}
+```{r,eval=F}
 write_rds(sdmTMB_models,here::here('model output','four species sdmTMB test.rds'))
 ```
 
@@ -138,7 +140,7 @@ write_rds(sdmTMB_models,here::here('model output','four species sdmTMB test.rds'
 
 A list of the model fits, split by species.
 
-```{r}
+```{r,eval=F}
 outputs <- sdmTMB_models %>% 
   group_split(spp) %>% 
   set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
@@ -146,25 +148,25 @@ outputs <- sdmTMB_models %>%
 
 ## Canary
 
-```{r}
+```{r,eval=F}
 outputs %>% pluck('canary rockfish','model')
 ```
 
 ## Darkblotched
 
-```{r}
+```{r,eval=F}
 outputs %>% pluck('darkblotched rockfish','model')
 ```
 
 ## Sablefish
 
-```{r}
+```{r,eval=F}
 outputs %>% pluck('sablefish','model')
 ```
 
 ## Shortspine Thornyhead
 
-```{r}
+```{r,eval=F}
 outputs %>% pluck('shortspine thornyhead','model')
 ```
 

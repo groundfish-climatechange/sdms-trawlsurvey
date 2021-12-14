@@ -1,0 +1,31 @@
+# Organize DTS footprints
+# Footprints provided by Becca Selden
+# 12/14/2021
+
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(here)
+library(ggsci)
+
+# import the footprints
+
+shp_fls <- list.files(here('data','DTS footprints'),full.names = T)
+shp_fls <- shp_fls[str_which(shp_fls,".shp")]
+
+footprints <- purrr::map(shp_fls,read_sf) %>% 
+  bind_rows() %>% 
+  mutate(port_group=c('BGA','CBA','CLO',"ERA","MRA","NPS"))
+bb <- st_bbox(footprints)
+
+coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
+  filter(name %in% c('California','Oregon','Washington','Nevada')) %>%
+  st_transform(st_crs(footprints))
+
+ggplot()+
+  geom_sf(data=coast,fill='grey70')+
+  geom_sf(data=footprints,aes(fill=port_group),alpha=0.6)+
+  xlim(bb[1],bb[3])+ylim(bb[2],bb[4])+
+  coord_sf(datum=NA)+
+  theme_void()+
+  scale_fill_npg(name="Port Group")

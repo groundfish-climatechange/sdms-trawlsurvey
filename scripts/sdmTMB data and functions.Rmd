@@ -72,7 +72,7 @@ roms <- read_rds(here::here('data','joined_30d_lagged_t_o.rds')) %>%
   # join the trawl_locs and filter by actual trawl locations and times
   left_join(trawl_locs) %>% 
   filter(realTrawl==1) %>% 
-  select(-realTrawl) %>% 
+  dplyr::select(-realTrawl) %>% 
   # rename time to something more useful
   rename(roms_hindcast_day=time)
 glimpse(roms)
@@ -156,6 +156,18 @@ trawl_roms_utm <- trawl_roms %>%
   # convert back to normal df
   st_set_geometry(NULL)
 ```
+
+```{r}
+#Extra mini-step to join the two thornyheads together
+thornyheads <- trawl_roms_utm %>% 
+  filter(grepl('thornyhead',species)) %>% 
+  group_by(date,trawl_id,station,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30,prop_hard_mixed,latitude,longitude) %>% 
+  summarise(cpue_kg_km2=sum(cpue_kg_km2)) %>% 
+  mutate(species="combined thornyheads")
+trawl_roms_utm <- trawl_roms_utm %>% 
+  bind_rows(thornyheads)
+```
+
 
 We can save this version of the data so we do not have to run the join every time.
 
