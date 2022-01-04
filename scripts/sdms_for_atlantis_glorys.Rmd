@@ -2,7 +2,10 @@
 title: "Atlantis SDMs with GLORYS"
 author: "Owen Liu"
 date: "1/4/2022"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true
 ---
 
 ```{r, include=FALSE}
@@ -36,9 +39,9 @@ theme_set(plot_theme)
 ```
 
 ```{r}
-# set up parallel processing
-future::plan(sequential)
-future::plan(multisession,workers=4)
+# set up parallel processing?
+# future::plan(sequential)
+# future::plan(multisession,workers=4)
 ```
 
 ```{r}
@@ -126,7 +129,7 @@ glorys_crop <- glorys %>%
 
 Start with an example species: Dover sole. See `sdmTMB models.Rmd` for details of the ensemble modelling approach.
 
-```{r, eval=F}
+```{r}
 ## dover sole models
 dover_models <- read_rds(here::here('model output','dover sole no substrate.rds'))
 names(dover_models)
@@ -187,7 +190,8 @@ To create ensemble predictions, we calculate predictions for each species' model
 # this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
 ensemble_predictions <- function(model_df){
   
-  original_model_data <- modelobj$data
+  # use the first model in the list to pull out the data
+  original_model_data <- model_df %>% pluck('model',1,'data')
   # need to use the original (hindcast) environmental data to scale the projected data
   mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
   sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
@@ -238,7 +242,7 @@ ensemble_predictions <- function(model_df){
 }
 ```
 
-```{r, eval=F}
+```{r}
 dover_ens_preds <- ensemble_predictions(dover_models)
 glimpse(dover_ens_preds)
 ```
@@ -330,3 +334,8 @@ Test with our example model
 dover_to_atlantis <- sdm_to_atlantis(dover_ens_preds)
 plot_sdm_year(dover_to_atlantis,2013)
 ```
+
+```{r}
+# write_rds(dover_to_atlantis,here('model output','atlantis sdms','dover sole.rds'))
+```
+
