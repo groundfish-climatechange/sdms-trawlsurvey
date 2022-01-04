@@ -211,7 +211,7 @@ Write a function that runs sdmTMB. It wil call the previous function to make the
 ```{r}
 # nknots=400;use_depth=F;time_vary=F;spatial_field=T;hab_spline=F;env_spline=F;spline_k=3
 # rm(time_varying,spatial_field,hab_spline,env_spline,spline_k,modeldat,spde,formula,substrate,enviro,dat,spp,time_formula,time,test_set,nknots,test_cv,use_depth,time_vary)
-run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3){
+run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -227,6 +227,7 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=
   #wiggly habitat relationship?
   substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
                       substrate)
+  if(!include_substrate) substrate=""
   
   # make the environmental effects
   enviro <- paste("mean_temp_roms_30_norm + 
@@ -308,7 +309,7 @@ test <- run_sdmTMB(dat=trawl_roms_utm,spp="sablefish",hab_spline = F,env_spline 
 ```{r}
 library(future)
 plan(multisession)
-run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
+run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -324,6 +325,8 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
   #wiggly habitat relationship?
   substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
                       substrate)
+  
+  if(!include_substrate) substrate=""
   
   # make the environmental effects
   enviro <- paste("mean_temp_roms_30_norm + I(mean_temp_roms_30_norm^2) + mean_oxygen_roms_30_norm + I(mean_oxygen_roms_30_norm^2)")

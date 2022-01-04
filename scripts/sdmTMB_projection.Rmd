@@ -163,7 +163,7 @@ This model used proportion hard substrate, along with 30-day lagged mean (normal
 Function to make predictions for one model. For now we only use the "midpoint" environmental data (i.e., the 30 day lag from July 31st).
 
 ```{r}
-# give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', or 'ipsl'
+# give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', 'ipsl'
 make_predictions <- function(modelobj,gcm="hadl"){
 
   original_model_data <- modelobj$data
@@ -184,7 +184,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
     set_names('temperature') %>% 
     mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
   
-  oxygen <- newdata %>% dplyr::select(contains('bt')) %>% 
+  oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
     set_names('oxygen') %>% 
     mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
 

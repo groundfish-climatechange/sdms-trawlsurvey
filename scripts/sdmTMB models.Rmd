@@ -47,12 +47,24 @@ For each species, we run 8 models, and also perform 2-fold cross-validation to o
 For each species, we set up the 8 models, then run them. We then run cross-validation and save the total (sum) log-likelihood of the witheld test set.
 
 ```{r}
-model_species <- function(spp){
-  models_to_run <- crossing(spp,spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
-    mutate(model_num=row_number())
-  out <- models_to_run %>% 
-    mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>%
-    mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
+model_species <- function(spp,use_substrate=T){
+
+  if(!use_substrate) {
+    models_to_run <-crossing(spp,spatial_field=c(F,T),env_spline=c(F,T),include_substrate=F) %>%
+      mutate(model_num=row_number())
+    
+    out <- models_to_run %>% 
+      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB,dat=trawl_roms_utm)) %>%
+      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
+    
+  } else {
+    models_to_run <- crossing(spp,spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
+      mutate(model_num=row_number())
+    out <- models_to_run %>% 
+      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>%
+      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
+  }
+  
   
   model_weights <- try(sdmTMB_stacking(out$model_cv))
   if(class(model_weights)=='try-error'){
@@ -73,11 +85,12 @@ model_species <- function(spp){
 
 Test it out
 ```{r, eval=F}
-test_models <- model_species('longspine thornyhead')
+test_models <- model_species('dover sole',use_substrate = F)
 # glimpse(shortspine_models)
 # sdmTMB_models <- crossing(spp=c("sablefish", "shortspine thornyhead","darkblotched rockfish","canary rockfish"),spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
 #   mutate(model_num=row_number())
 # sdmTMB_models
+write_rds(test_models,here::here('model output','dover sole no substrate.rds'))
 ```
 
 
@@ -115,58 +128,3 @@ s <- "combined thornyheads"
 m <- model_species(s)
 write_rds(m,here::here('model output',paste(s,'models.rds')))
 ```
-
-
-
-```{r}
-# OLD CODE
-# sdmTMB_models <- sdmTMB_models %>% 
-#   mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
-# 
-# #test model
-# test_model <- sdmTMB_models %>% 
-#   slice(6) %>% 
-#   mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm))
-```
-
-Save model outputs as an .rds
-
-```{r,eval=F}
-write_rds(sdmTMB_models,here::here('model output','four species sdmTMB test.rds'))
-```
-
-
-# Outputs
-
-A list of the model fits, split by species.
-
-```{r,eval=F}
-outputs <- sdmTMB_models %>% 
-  group_split(spp) %>% 
-  set_names(c('canary rockfish','darkblotched rockfish','sablefish','shortspine thornyhead'))
-```
-
-## Canary
-
-```{r,eval=F}
-outputs %>% pluck('canary rockfish','model')
-```
-
-## Darkblotched
-
-```{r,eval=F}
-outputs %>% pluck('darkblotched rockfish','model')
-```
-
-## Sablefish
-
-```{r,eval=F}
-outputs %>% pluck('sablefish','model')
-```
-
-## Shortspine Thornyhead
-
-```{r,eval=F}
-outputs %>% pluck('shortspine thornyhead','model')
-```
-

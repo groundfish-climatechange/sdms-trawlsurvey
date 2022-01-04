@@ -1,0 +1,215 @@
+---
+title: "Atlantis Grid SDM Translation"
+author: "Owen Liu"
+date: "9/3/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(rbgm)
+library(sf)
+library(here)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+# General Plan
+
+We need to tranlsate SDM outputs into relative abundance for Atlantis. We will do this by taking projected SDM outputs, averaging CPUE by box. Next, to extrapolate beyond the trawl survey domain, we will use Atlantis polygons paired by depth to make an assumption of equal densities in paired boxes. Finally, we will multiply by polygon area, then divide by the total across all polygons, to obtain an overall relative biomass value for each box.
+
+# Import Data
+
+## ROMS and Atlantis Spatial Grids
+
+```{r}
+# Atlantis grid
+fl <- here::here("data",'grids',"CalCurrentV3_utm.bgm")
+# load the file
+bgm <- read_bgm(fl)
+names(bgm)
+emocc_sf <- box_sf(bgm) %>% dplyr::select(box_id,label,area)
+emocc_box_areas <- emocc_sf %>% st_set_geometry(NULL) %>% dplyr::select(-label)
+
+# st_crs(emocc_sf) <- st_crs(attr(emocc_sf$geometry, "crs")$proj)
+
+# the ROMS grid, clipped to the SDM projection extent
+roms <- read_rds(here('data','roms_for_sdm_projection.rds'))
+roms_sf <- roms %>%
+  # just find the unique grid cells (we don't care about time series, only grid cell locations right now)
+  dplyr::distinct(lat,lon,longitude,latitude) %>% 
+  st_as_sf(coords=c('longitude','latitude'),crs= "+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+
+# load west cost land for mapping
+coaststates <- ne_countries(continent="North America",returnclass = 'sf') %>% 
+  filter(name %in% c('Canada','United States','Mexico')) %>% 
+  st_transform(st_crs(roms_sf))
+```
+
+Convert Atlantis BGM to the same CRS as ROMS
+
+```{r}
+emocc_sf <- emocc_sf %>% 
+  st_transform(st_crs(roms_sf))
+```
+
+A quick plot to show what we are starting with
+
+```{r}
+bbox=st_bbox(emocc_sf)
+ggplot()+
+  geom_sf(data=coaststates,fill='gray50')+
+  geom_sf(data=emocc_sf,fill='blue',alpha=0.5)+
+  geom_sf(data=roms_sf,size=0.1)+
+  xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+```
+
+
+##  Atlantis Coupled Boxes
+
+Credit to Pierre-Yves. NOTE: THIS NEEDS TO BE UPDATED 09/10/21
+
+```{r}
+cps <- read_csv(here('data','grids','Atlantis_polygon_couples.csv'),col_types = 'dc')
+glimpse(cps)
+
+# use just first match for now
+cps <- cps %>% 
+  mutate(first_match=str_sub(polygon_ref,1,2) %>% as.integer) %>% 
+  dplyr::select(polygon,first_match) %>% 
+  rename(box_id=polygon)
+glimpse(cps)
+```
+
+
+## SDM Projection Functions
+
+Load functions from projection script
+
+```{r}
+rmarkdown::render(here::here('scripts','sdmTMB_projection.Rmd'),quiet=TRUE)
+```
+
+# Spatial Join
+
+Match the ROMS points to an Atlantis box
+
+```{r}
+roms_atlantis_spatial_join <- roms_sf %>% 
+  st_join(emocc_sf)
+glimpse(roms_atlantis_spatial_join)
+```
+
+Now we have a key matching ROMS points to their appropriate boxes
+
+
+# Species Distribution Models
+
+Run an example ensemble species distribution model and project using the IPSL ESM
+
+```{r}
+sable_models <- read_rds(here::here('model output','sablefish models.rds'))
+sable_ens <- ensemble_predictions(sable_models,gcm='ipsl')
+```
+
+# Join to Atlantis Polygons
+
+Write a function to extract mean predictions for each Atlantis polygon, by first joining points to polygons using the join key we created above
+
+```{r}
+sdm_to_atlantis <- function(preds){
+  
+  # filter to the year of interest and exponentiate the estimated dependent variable
+  df <- preds %>% 
+    group_by(year,lon,lat) %>% 
+    summarise(est=mean(ens_est,na.rm=T) %>% exp()) %>% 
+    drop_na() %>% 
+    ungroup()
+  
+  # join the SDM/Atlantis matching key
+  atlantis_matched <- df %>% 
+    left_join(roms_atlantis_spatial_join,by=c('lon','lat')) %>% 
+    
+    # group by Atlantis box and calculate a mean
+    group_by(box_id,year) %>% 
+    summarise(mean_est=mean(est,na.rm=T)) %>% 
+    ungroup() %>% 
+    drop_na()
+    
+  # join the paired Atlantis boxes
+  atlantis_mean_cpue_all_boxes <- atlantis_matched %>% 
+    complete(box_id=full_seq(0:88,1),year) %>% 
+    left_join(cps,by=c('box_id')) %>% 
+    # join the estimates again, using the matched box instead of the original box
+    left_join(atlantis_matched,by=c('first_match'='box_id','year')) %>% 
+    # coalesce original and matched estimates
+    mutate(est=coalesce(mean_est.x,mean_est.y)) %>%
+    mutate(est=replace_na(est,0)) %>% 
+    dplyr::select(box_id,year,est)
+  
+  # add in area information, scale up, then normalize across all boxes
+  atlantis_est_final <- atlantis_mean_cpue_all_boxes %>% 
+    left_join(emocc_box_areas,by=c('box_id')) %>% 
+    group_by(year) %>% 
+    # multiply by total area
+    mutate(totest = est*area) %>% 
+    # finally, calculate relative index
+    mutate(rel_est = totest/sum(totest,na.rm=T)) %>% 
+    mutate(perc_est = rel_est*100) %>% 
+    ungroup()
+  
+  return(atlantis_est_final)
+}
+```
+
+If you want to plot, can pick a year and join the spatial polygon data
+
+```{r}
+plot_sdm_year <- function(atlantis_estimates,yr=2050){
+  polys<- atlantis_estimates %>% 
+    filter(year==yr) %>% 
+    left_join(emocc_sf,by=c('box_id','area')) %>% 
+    st_as_sf()
+  bbox=st_bbox(emocc_sf)
+
+  out <- ggplot()+
+    geom_sf(data=coaststates,fill='gray50')+
+    geom_sf(data=polys,aes(fill=perc_est),alpha=1)+
+    scale_fill_viridis_c()+
+    xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+    labs(fill=paste("Percent of Total Abundance by Box,",yr))
+  
+  plot(out)
+}
+```
+
+
+Test with our example model
+
+```{r}
+sable_to_atlantis <- sdm_to_atlantis(sable_ens)
+plot_sdm_year(sable_to_atlantis,2013)
+
+```
+
+

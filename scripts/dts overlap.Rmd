@@ -25,6 +25,7 @@ library(RANN)
 library(furrr)
 library(future)
 library(tictoc)
+library(ggsci)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -308,66 +309,66 @@ plot_grid(plotlist = list(ylab,three_spp_r[[1]],three_spp_r[[2]],three_spp_r[[3]
 
 Use kernel density estimation?
 ```{r,eval=F}
-library(MASS)
-kde2d.weighted <- function (x, y, w, h, n = 25, lims = c(range(x), range(y))) {
-  nx <- length(x)
-  if (length(y) != nx) 
-    stop("data vectors must be the same length")
-  if (length(w) != nx & length(w) != 1)
-    stop("weight vectors must be 1 or length of data")
-  gx <- seq(lims[1], lims[2], length = n) # gridpoints x
-  gy <- seq(lims[3], lims[4], length = n) # gridpoints y
-  if (missing(h)) 
-    h <- c(bandwidth.nrd(x), bandwidth.nrd(y));
-  if (missing(w)) 
-    w <- numeric(nx)+1;
-  h <- h/4
-  ax <- outer(gx, x, "-")/h[1] # distance of each point to each grid point in x-direction
-  ay <- outer(gy, y, "-")/h[2] # distance of each point to each grid point in y-direction
-  z <- (matrix(rep(w,n), nrow=n, ncol=nx, byrow=TRUE)*matrix(dnorm(ax), n, nx)) %*% t(matrix(dnorm(ay), n, nx))/(sum(w) * h[1] * h[2]) # z is the density
-  return(list(x = gx, y = gy, z = z))
-}
+# library(MASS)
+# kde2d.weighted <- function (x, y, w, h, n = 25, lims = c(range(x), range(y))) {
+#   nx <- length(x)
+#   if (length(y) != nx) 
+#     stop("data vectors must be the same length")
+#   if (length(w) != nx & length(w) != 1)
+#     stop("weight vectors must be 1 or length of data")
+#   gx <- seq(lims[1], lims[2], length = n) # gridpoints x
+#   gy <- seq(lims[3], lims[4], length = n) # gridpoints y
+#   if (missing(h)) 
+#     h <- c(bandwidth.nrd(x), bandwidth.nrd(y));
+#   if (missing(w)) 
+#     w <- numeric(nx)+1;
+#   h <- h/4
+#   ax <- outer(gx, x, "-")/h[1] # distance of each point to each grid point in x-direction
+#   ay <- outer(gy, y, "-")/h[2] # distance of each point to each grid point in y-direction
+#   z <- (matrix(rep(w,n), nrow=n, ncol=nx, byrow=TRUE)*matrix(dnorm(ax), n, nx)) %*% t(matrix(dnorm(ay), n, nx))/(sum(w) * h[1] * h[2]) # z is the density
+#   return(list(x = gx, y = gy, z = z))
+# }
 ```
 ```{r}
-bw <- c(bandwidth.nrd(three_spp$mean_bt_30d_ipsl), bandwidth.nrd(three_spp$mean_oxy_bottom_30d_ipsl))
-#try with one species
-sable_kde <- three_spp %>% filter(species=="sable")
-sable_kde <- kde2d.weighted(sable_kde$mean_bt_30d_ipsl,sable_kde$mean_oxy_bottom_30d_ipsl,sable_kde$rel_abun,n=50,h=bw)
-sable_2d_kde <- crossing(temp=sable_kde$x,oxy=sable_kde$y) %>% mutate(z=as.vector(sable_kde$z),species='sable')
-
-# ggplot(sable_2d_kde,aes(temp,oxy,z=z))+
+# bw <- c(bandwidth.nrd(three_spp$mean_bt_30d_ipsl), bandwidth.nrd(three_spp$mean_oxy_bottom_30d_ipsl))
+# #try with one species
+# sable_kde <- three_spp %>% filter(species=="sable")
+# sable_kde <- kde2d.weighted(sable_kde$mean_bt_30d_ipsl,sable_kde$mean_oxy_bottom_30d_ipsl,sable_kde$rel_abun,n=50,h=bw)
+# sable_2d_kde <- crossing(temp=sable_kde$x,oxy=sable_kde$y) %>% mutate(z=as.vector(sable_kde$z),species='sable')
+# 
+# # ggplot(sable_2d_kde,aes(temp,oxy,z=z))+
+# #   geom_contour_filled()+
+# #   lims(x=c(0,6),y=c(0,100))
+# 
+# #try with one species
+# longspine_kde <- three_spp %>% filter(species=="longspine")
+# longspine_kde <- kde2d.weighted(longspine_kde$mean_bt_30d_ipsl,longspine_kde$mean_oxy_bottom_30d_ipsl,longspine_kde$rel_abun,n=50,h=bw)
+# longspine_2d_kde <- crossing(temp=longspine_kde$x,oxy=longspine_kde$y) %>% mutate(z=as.vector(longspine_kde$z),species='longspine')
+# 
+# # ggplot(longspine_2d_kde,aes(temp,oxy,z=z))+
+# #   geom_contour_filled()+
+# #   lims(x=c(0,6),y=c(0,100))
+# 
+# #try with one species
+# dover_kde <- three_spp %>% filter(species=="dover")
+# dover_kde <- kde2d.weighted(dover_kde$mean_bt_30d_ipsl,dover_kde$mean_oxy_bottom_30d_ipsl,dover_kde$rel_abun,n=50,h=bw)
+# dover_2d_kde <- crossing(temp=dover_kde$x,oxy=dover_kde$y) %>% mutate(z=as.vector(dover_kde$z),species='dover')
+# 
+# # ggplot(dover_2d_kde,aes(temp,oxy,z=z))+
+# #   geom_contour_filled()+
+# #   lims(x=c(0,6),y=c(0,100))+
+# #   theme_minimal()
+# 
+# kde_3spp <- sable_2d_kde %>% 
+#   bind_rows(dover_2d_kde) %>% 
+#   bind_rows(longspine_2d_kde)
+# 
+# kde_3spp %>% 
+#   ggplot(aes(temp,oxy,z=z))+
 #   geom_contour_filled()+
-#   lims(x=c(0,6),y=c(0,100))
-
-#try with one species
-longspine_kde <- three_spp %>% filter(species=="longspine")
-longspine_kde <- kde2d.weighted(longspine_kde$mean_bt_30d_ipsl,longspine_kde$mean_oxy_bottom_30d_ipsl,longspine_kde$rel_abun,n=50,h=bw)
-longspine_2d_kde <- crossing(temp=longspine_kde$x,oxy=longspine_kde$y) %>% mutate(z=as.vector(longspine_kde$z),species='longspine')
-
-# ggplot(longspine_2d_kde,aes(temp,oxy,z=z))+
-#   geom_contour_filled()+
-#   lims(x=c(0,6),y=c(0,100))
-
-#try with one species
-dover_kde <- three_spp %>% filter(species=="dover")
-dover_kde <- kde2d.weighted(dover_kde$mean_bt_30d_ipsl,dover_kde$mean_oxy_bottom_30d_ipsl,dover_kde$rel_abun,n=50,h=bw)
-dover_2d_kde <- crossing(temp=dover_kde$x,oxy=dover_kde$y) %>% mutate(z=as.vector(dover_kde$z),species='dover')
-
-# ggplot(dover_2d_kde,aes(temp,oxy,z=z))+
-#   geom_contour_filled()+
-#   lims(x=c(0,6),y=c(0,100))+
-#   theme_minimal()
-
-kde_3spp <- sable_2d_kde %>% 
-  bind_rows(dover_2d_kde) %>% 
-  bind_rows(longspine_2d_kde)
-
-kde_3spp %>% 
-  ggplot(aes(temp,oxy,z=z))+
-  geom_contour_filled()+
-  theme_minimal()+
-  scale_x_continuous(limits=c(0,5),expand=c(0,0))+
-  scale_y_continuous(limits=c(0,100),expand=c(0,0))
+#   theme_minimal()+
+#   scale_x_continuous(limits=c(0,5),expand=c(0,0))+
+#   scale_y_continuous(limits=c(0,100),expand=c(0,0))
 ```
 
 # Maps
@@ -599,5 +600,54 @@ sablemap2 <- make_comparison_map(sable_ens,yr=2100)
 
 lsmap1 <- make_comparison_map(ls_ens,yr=2050)
 lsmap2 <- make_comparison_map(ls_ens,yr=2100)
+```
+
+# DTS Footprints
+
+We can use fishing data to look at climatic and predicted species abundance and overlap changes within historical (2011-2015) fishing footprints for DTS. From Becca Selden, 12/09/2021:
+
+Communities were defined as all trips returning to a specific IOPAC port group. All fishing trips associated with the community that caught dover sole, thornyhead, and sablefish were extracted from PACFIN. Total quantity landed was aggregated across species for each trip. The latitude and longitude coordinates were converted to the Mercator projection UTM Zone 10 to allow for more accurate estimates of area and overlap. A weighted kernel density surface was created from the point estimates of catch for the focal period with a 10 km bandwidth, using the density.ppp function in the sp package in R. The footprint of the community was defined using a percent volume contour that represents the boundary of the area that contains 75% of the volume of the kernel density distribution using the `getvolumeUD` function in the `adehabitat` package in R.
+
+```{r}
+footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
+  st_transform(st_crs(projection_extent))
+```
+
+## Predicted Species Abundance
+
+Using sdmTMB model outputs, calculate changing species abundances within DTS footprints.
+
+```{r}
+calc_footprint_abun_ts <- function(ensemble,fp=footprints){
+  out <- ensemble %>% 
+    st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+    st_join(footprints) %>% 
+    group_by(port_group,year) %>% 
+    summarise(abun=sum(ens_est,na.rm=T)) %>% 
+    ungroup()
+  out
+}
+
+dover_footprint_ts <- calc_footprint_abun_ts(dover_ens) %>% filter(!is.na(port_group))
+dover_footprint_ts_plot <- ggplot(dover_footprint_ts,aes(year,abun,col=port_group))+
+  geom_line()+
+  scale_color_npg()+
+  labs(x="Year",y="Abundance",col="Port Group")
+
+sable_footprint_ts <- calc_footprint_abun_ts(sable_ens) %>% filter(!is.na(port_group))
+sable_footprint_ts_plot <- ggplot(sable_footprint_ts,aes(year,abun,col=port_group))+
+  geom_line()+
+  scale_color_npg()+
+  labs(x="Year",y="Abundance",col="Port Group")
+
+ls_footprint_ts <- calc_footprint_abun_ts(ls_ens) %>% filter(!is.na(port_group))
+ls_footprint_ts_plot<- ggplot(ls_footprint_ts,aes(year,abun,col=port_group))+
+  geom_line()+
+  scale_color_npg()+
+  labs(x="Year",y="Abundance",col="Port Group")
+
+dover_footprint_ts_plot
+sable_footprint_ts_plot
+ls_footprint_ts_plot
 ```
 

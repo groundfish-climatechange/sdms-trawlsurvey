@@ -29,3 +29,6 @@ ggplot()+
   coord_sf(datum=NA)+
   theme_void()+
   scale_fill_npg(name="Port Group")
+
+# write as one file
+write_sf(footprints,here('data','DTS footprints','DTS_footprints_combined.shp'))

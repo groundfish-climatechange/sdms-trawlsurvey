@@ -1,0 +1,332 @@
+---
+title: "Atlantis SDMs with GLORYS"
+author: "Owen Liu"
+date: "1/4/2022"
+output: html_document
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(rbgm)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(cowplot)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+```{r}
+# set up parallel processing
+future::plan(sequential)
+future::plan(multisession,workers=4)
+```
+
+```{r}
+# Atlantis grid
+fl <- here::here("data",'grids',"CalCurrentV3_utm.bgm")
+# load the file
+bgm <- read_bgm(fl)
+names(bgm)
+emocc_sf <- box_sf(bgm) %>% dplyr::select(box_id,label,area) %>% 
+  st_transform("+proj=utm +zone=10 +datum=WGS84 +units=km")
+# areas of boxes
+emocc_box_areas <- emocc_sf %>% st_set_geometry(NULL) %>% dplyr::select(-label)
+```
+
+```{r}
+# GLORYS temp/oxygen data
+glorys <- read_rds(here('data','GLORYS_bottom_temp_o2_SDMs.rds')) %>% 
+  # convert to UTM zone 10
+  st_as_sf(coords=c('longitude','latitude'),crs=4326) %>% 
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+  mutate(latitude = sf::st_coordinates(.)[,2],
+         longitude = sf::st_coordinates(.)[,1])
+```
+
+```{r}
+# spatial background map
+# load west cost land for mapping
+coast <- ne_countries(continent="North America",scale=50,returnclass = 'sf') %>% 
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+  st_crop(emocc_sf)
+# coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
+#   filter(name %in% c('California','Oregon','Washington','Nevada')) %>%
+#   st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km")
+```
+
+
+# Purpose
+
+Produce groundfish species distribution models for use in the new version of the Atlantis ecosystem model. We will use `sdmTMB` to fit SDMs to high-resolution ROMS and trawl survey data, establishing the environmental niches of groundfish relative to bottom temperature and oxygen. Then, we use a GLORYS/ESM hybrid oceanography product to project species distributions out to 2100 in the California Current. Finally, we will translate those SDMs on to the Atlantis polygon/grid structure.
+
+Note: Model runs are described and performed in the `sdmTMB models.Rmd` script. Here, we apply the new GLORYS data for projection.
+
+# Define Projection Extent
+
+Here, we set the boundaries for the `sdmTMB` projection. We use two criteria: 1) we crop the GLORYS data to the extent of the Atlantis polygons; and 2) we exclude areas exceeding the maximum depth recorded in the trawl data.
+
+```{r}
+# trawl IDs and depths
+trawls <- read_rds(here::here('data','trawl','trawlID.rds'))
+max_depth <- max(trawls$depth_trawl,na.rm=T)
+
+# glorys bbox with areas that are too deep removed
+atlantis_glorys_extent <- glorys %>% 
+  filter(depth<max_depth) %>% 
+  st_bbox() %>% 
+  st_as_sfc()
+
+# atlantis polygons, summarized/unioned
+emocc_merged <- emocc_sf %>% summarise()
+
+# plot our starting point
+ggplot()+
+  geom_sf(data=coast)+
+  geom_sf(data=atlantis_glorys_extent,fill='blue',alpha=0.5)+
+  geom_sf(data=emocc_merged,fill='red',alpha=0.5)
+
+# crop glorys bbox with atlantis polygons
+ext <- atlantis_glorys_extent %>% 
+  st_intersection(emocc_merged)
+
+# plot the final domain
+ggplot()+
+  geom_sf(data=coast)+
+  geom_sf(data=ext,fill='purple',alpha=0.5)
+```
+Use this projection extent to crop the GLORYS data used for projection
+```{r}
+glorys_crop <- glorys %>% 
+  # crop to SDM extent
+  st_intersection(ext) %>%
+  st_set_geometry(NULL)
+```
+
+# Load Fitted Models
+
+Start with an example species: Dover sole. See `sdmTMB models.Rmd` for details of the ensemble modelling approach.
+
+```{r, eval=F}
+## dover sole models
+dover_models <- read_rds(here::here('model output','dover sole no substrate.rds'))
+names(dover_models)
+```
+
+# GLORYS Projection Function
+
+```{r}
+make_predictions_glorys <- function(modelobj){
+
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data from GLORYS
+  newdata <- glorys_crop %>% 
+    # No habitat data
+    # left_join(hab,by=c("lat","lon")) %>% 
+    # drop_na() %>% 
+    dplyr::select(year,latitude,longitude,depth,temperature,o2)
+  
+  temperature <- newdata %>%
+    # keep variable names from model fitting to ROMS
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% 
+    mutate(mean_oxygen_roms_30_norm=(o2-mean_oxy)/sd_oxy)
+
+  newdata <- newdata %>% 
+    left_join(temperature,by = c("year", "latitude", "longitude", "depth", "temperature", "o2")) %>% 
+    left_join(oxygen,by = c("year", "latitude", "longitude", "depth", "temperature", "o2")) %>% 
+    dplyr::select(-temperature,-o2) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  # now we can make the predictions
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=T,extra_time=yrs)
+  
+  predicted_cpue_km2
+}
+```
+
+Test it
+```{r,eval=F}
+dover_future1 <- make_predictions_glorys(dover_models %>% pluck('model',1))
+glimpse(dover_future1$data)
+```
+
+# Ensemble Predictions Function
+
+To create ensemble predictions, we calculate predictions for each species' model separately, then weight them using the weights established in model fitting (see `sdmTMB::sdmTMB_stacking()`).
+
+```{r}
+# this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
+ensemble_predictions <- function(model_df){
+  
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data from GLORYS
+  newdata <- glorys_crop %>% 
+    # No habitat data
+    # left_join(hab,by=c("lat","lon")) %>% 
+    # drop_na() %>% 
+    dplyr::select(year,latitude,longitude,depth,temperature,o2)
+  
+  temperature <- newdata %>%
+    # keep variable names from model fitting to ROMS
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% 
+    mutate(mean_oxygen_roms_30_norm=(o2-mean_oxy)/sd_oxy)
+
+  newdata <- newdata %>% 
+    left_join(temperature,by = c("year", "latitude", "longitude", "depth", "temperature", "o2")) %>% 
+    left_join(oxygen,by = c("year", "latitude", "longitude", "depth", "temperature", "o2")) %>% 
+    dplyr::select(-temperature,-o2) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  
+  # model weights
+  w <- model_df %>% pluck('weight')
+  w <- ifelse(all(is.na(w)),rep(1,length(w)),w)
+  
+  model_list <- model_df %>% pluck('model')
+  
+  # make the predictions for all 8 models
+  all_predictions <- purrr::map2_df(model_list,w,function(m,weight){
+    preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs) %>% 
+      mutate(weight=weight)
+    preds
+  })
+  ens_preds <- all_predictions %>% 
+    group_by(year,longitude,latitude,depth) %>% 
+    summarise(ens_est=weighted.mean(est,weight)) %>% 
+    ungroup()
+  
+  ens_preds
+}
+```
+
+```{r, eval=F}
+dover_ens_preds <- ensemble_predictions(dover_models)
+glimpse(dover_ens_preds)
+```
+
+# Calculate Proportional Abundance
+
+Using Atlantis polygons, calculate proportional abundance of the species by Atlantis polygon and year
+
+Match the GLORYS points to an Atlantis box
+
+```{r}
+glorys_atlantis_spatial_join <- glorys %>% 
+  st_join(emocc_sf) %>% 
+  st_set_geometry(NULL) %>% 
+  distinct(longitude,latitude,box_id,label,area)
+glimpse(glorys_atlantis_spatial_join)
+```
+
+# Join to Atlantis Polygons
+
+Write a function to extract mean predictions for each Atlantis polygon, by first joining points to polygons using the join key we created above
+
+```{r}
+# the `preds` input here is the dataframe of ensemble predictions
+sdm_to_atlantis <- function(preds){
+  
+  # filter to the year of interest and exponentiate the estimated dependent variable
+  df <- preds %>% 
+    group_by(year,longitude,latitude) %>% 
+    summarise(est=mean(ens_est,na.rm=T) %>% exp()) %>% 
+    drop_na() %>% 
+    ungroup()
+  
+  # join the SDM/Atlantis matching key
+  atlantis_matched <- df %>% 
+    left_join(glorys_atlantis_spatial_join,by=c('longitude','latitude')) %>% 
+    drop_na() %>% 
+    
+    # group by Atlantis box and calculate a mean
+    group_by(box_id,year) %>% 
+    summarise(mean_est=mean(est,na.rm=T)) %>% 
+    ungroup()
+    
+  # join the paired Atlantis boxes
+  atlantis_mean_cpue_all_boxes <- atlantis_matched %>% 
+    complete(box_id=full_seq(0:88,1),year,fill=list(mean_est=0)) %>%
+    rename(est=mean_est) %>% 
+    dplyr::select(box_id,year,est)
+  
+  # add in area information, scale up, then normalize across all boxes
+  atlantis_est_final <- atlantis_mean_cpue_all_boxes %>% 
+    left_join(emocc_box_areas,by=c('box_id')) %>% 
+    group_by(year) %>% 
+    # multiply by total area
+    mutate(totest = est*area) %>% 
+    # finally, calculate relative index
+    mutate(rel_est = totest/sum(totest,na.rm=T)) %>% 
+    mutate(perc_est = rel_est*100) %>% 
+    ungroup()
+  
+  return(atlantis_est_final)
+}
+```
+
+If you want to plot, can pick a year and join the spatial polygon data
+
+```{r}
+plot_sdm_year <- function(atlantis_estimates,yr=2050){
+  polys<- atlantis_estimates %>% 
+    filter(year==yr) %>% 
+    left_join(emocc_sf,by=c('box_id','area')) %>% 
+    st_as_sf()
+  bbox=st_bbox(emocc_sf)
+
+  out <- ggplot()+
+    geom_sf(data=coast,fill='gray50')+
+    geom_sf(data=polys,aes(fill=perc_est),col=NA,alpha=1)+
+    scale_fill_viridis_c()+
+    xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+    labs(fill=paste("Percent of Total Abundance by Box,",yr))
+  
+  plot(out)
+}
+```
+
+Test with our example model
+
+```{r}
+dover_to_atlantis <- sdm_to_atlantis(dover_ens_preds)
+plot_sdm_year(dover_to_atlantis,2013)
+```
