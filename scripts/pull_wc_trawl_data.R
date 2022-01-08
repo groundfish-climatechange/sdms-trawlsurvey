@@ -58,9 +58,11 @@ cope_haltuch = c("aurora rockfish", "big skate", "bigfin eelpout",
                  "shortbelly rockfish", "shortspine thornyhead", "slender sole",
                  "pacific spiny dogfish", "splitnose rockfish", "spotted ratfish",
                  "stripetail rockfish", "white croaker", "yellowtail rockfish")
+# extras for atlantis groups
+atlantis_extras <- c("bocaccio","yelloweye rockfish","pacific ocean perch","pacific halibut")
 
 # these are additional species on the prioritization spreadsheet
-fram = c(cope_haltuch, "vermilion and sunset rockfish",
+fram = c(cope_haltuch,atlantis_extras, "vermilion and sunset rockfish",
          "black rockfish",'california halibut',
          "cowcod","copper rockfish",
          "brown rockfish","quillback rockfish",

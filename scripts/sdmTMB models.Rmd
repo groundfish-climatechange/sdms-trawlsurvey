@@ -47,22 +47,22 @@ For each species, we run 8 models, and also perform 2-fold cross-validation to o
 For each species, we set up the 8 models, then run them. We then run cross-validation and save the total (sum) log-likelihood of the witheld test set.
 
 ```{r}
-model_species <- function(spp,use_substrate=T){
+model_species <- function(spp,data=trawl_roms_utm,use_substrate=T){
 
   if(!use_substrate) {
     models_to_run <-crossing(spp,spatial_field=c(F,T),env_spline=c(F,T),include_substrate=F) %>%
       mutate(model_num=row_number())
     
     out <- models_to_run %>% 
-      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB,dat=trawl_roms_utm)) %>%
-      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
+      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB,dat=data)) %>%
+      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,env_spline=env_spline,include_substrate=include_substrate),run_sdmTMB_cv,dat=data,return_what="model"))
     
   } else {
     models_to_run <- crossing(spp,spatial_field=c(F,T),hab_spline=c(F,T),env_spline=c(F,T)) %>%
       mutate(model_num=row_number())
     out <- models_to_run %>% 
-      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=trawl_roms_utm)) %>%
-      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=trawl_roms_utm,return_what="model"))
+      mutate(model=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB,dat=data)) %>%
+      mutate(model_cv=purrr::pmap(list(spp=spp,spatial_field=spatial_field,hab_spline=hab_spline,env_spline=env_spline),run_sdmTMB_cv,dat=data,return_what="model"))
   }
   
   
@@ -94,11 +94,11 @@ write_rds(test_models,here::here('model output','dover sole no substrate.rds'))
 ```
 
 
-## Call sdmTMB
+## Call sdmTMB (`eval=F` for now)
 
 Here we actually run the models, for a vector of species.
 
-```{r}
+```{r,eval=F}
 # top 10 species by mean cpue in the trawl survey (this is a totally random criterion)
 species <- trawl_roms_utm %>% 
   filter(species != "pacific hake",species != "dungeness crab") %>% 
@@ -110,9 +110,9 @@ species
 
 ```
 
-Run models and save cross-validation model stacking weights
+Run models and save cross-validation model stacking weights. (note: this chunk is turned to eval=F for now)
 
-```{r}
+```{r,eval=F}
 plan(multisession)
 for(i in 1:length(species$species)){
   s <- species$species[i]

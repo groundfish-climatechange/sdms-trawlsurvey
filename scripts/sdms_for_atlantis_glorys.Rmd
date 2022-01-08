@@ -50,7 +50,7 @@ fl <- here::here("data",'grids',"CalCurrentV3_utm.bgm")
 # load the file
 bgm <- read_bgm(fl)
 names(bgm)
-emocc_sf <- box_sf(bgm) %>% dplyr::select(box_id,label,area) %>% 
+emocc_sf <- box_sf(bgm) %>% dplyr::select(box_id,label,area,botz) %>% 
   st_transform("+proj=utm +zone=10 +datum=WGS84 +units=km")
 # areas of boxes
 emocc_box_areas <- emocc_sf %>% st_set_geometry(NULL) %>% dplyr::select(-label)
@@ -86,7 +86,7 @@ Note: Model runs are described and performed in the `sdmTMB models.Rmd` script. 
 
 # Define Projection Extent
 
-Here, we set the boundaries for the `sdmTMB` projection. We use two criteria: 1) we crop the GLORYS data to the extent of the Atlantis polygons; and 2) we exclude areas exceeding the maximum depth recorded in the trawl data.
+Here, we set the boundaries for the `sdmTMB` projection. We use three criteria: 1) we crop the GLORYS data to the extent of the Atlantis polygons; 2) for all species except lanternfish/myctophids, we want to we exclude offshore Atlantis polygons from the projection; 3) for lanternfish, we will keep all boxes.
 
 ```{r}
 # trawl IDs and depths
@@ -101,25 +101,37 @@ atlantis_glorys_extent <- glorys %>%
 
 # atlantis polygons, summarized/unioned
 emocc_merged <- emocc_sf %>% summarise()
+emocc_no_offshore_merged <- emocc_sf %>% 
+  filter(botz!=min(botz)) %>% 
+  summarise()
 
 # plot our starting point
 ggplot()+
   geom_sf(data=coast)+
   geom_sf(data=atlantis_glorys_extent,fill='blue',alpha=0.5)+
-  geom_sf(data=emocc_merged,fill='red',alpha=0.5)
+  geom_sf(data=emocc_no_offshore_merged,fill='red',alpha=0.5)
 
 # crop glorys bbox with atlantis polygons
 ext <- atlantis_glorys_extent %>% 
+  st_intersection(emocc_no_offshore_merged)
+ext_offshore <- atlantis_glorys_extent %>% 
   st_intersection(emocc_merged)
 
 # plot the final domain
 ggplot()+
   geom_sf(data=coast)+
+  geom_sf(data=ext_offshore,fill='yellow',alpha=0.5)+
   geom_sf(data=ext,fill='purple',alpha=0.5)
 ```
+
 Use this projection extent to crop the GLORYS data used for projection
+
 ```{r}
 glorys_crop <- glorys %>% 
+  # crop to SDM extent
+  st_intersection(ext_offshore) %>%
+  st_set_geometry(NULL)
+glorys_no_offshore_crop <- glorys %>% 
   # crop to SDM extent
   st_intersection(ext) %>%
   st_set_geometry(NULL)
@@ -129,7 +141,7 @@ glorys_crop <- glorys %>%
 
 Start with an example species: Dover sole. See `sdmTMB models.Rmd` for details of the ensemble modelling approach.
 
-```{r}
+```{r,eval=F}
 ## dover sole models
 dover_models <- read_rds(here::here('model output','dover sole no substrate.rds'))
 names(dover_models)
@@ -137,7 +149,7 @@ names(dover_models)
 
 # GLORYS Projection Function
 
-```{r}
+```{r,eval=F}
 make_predictions_glorys <- function(modelobj){
 
   original_model_data <- modelobj$data
@@ -188,7 +200,7 @@ To create ensemble predictions, we calculate predictions for each species' model
 
 ```{r}
 # this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
-ensemble_predictions <- function(model_df){
+ensemble_predictions <- function(model_df,use_offshore=F){
   
   # use the first model in the list to pull out the data
   original_model_data <- model_df %>% pluck('model',1,'data')
@@ -199,7 +211,8 @@ ensemble_predictions <- function(model_df){
   sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
   
   # create a new tibble with the projected data from GLORYS
-  newdata <- glorys_crop %>% 
+  if(use_offshore){glorys_to_use <- glorys_crop}else{glorys_to_use <- glorys_no_offshore_crop}
+  newdata <- glorys_to_use %>% 
     # No habitat data
     # left_join(hab,by=c("lat","lon")) %>% 
     # drop_na() %>% 
@@ -242,10 +255,60 @@ ensemble_predictions <- function(model_df){
 }
 ```
 
-```{r}
+```{r,eval=F}
 dover_ens_preds <- ensemble_predictions(dover_models)
 glimpse(dover_ens_preds)
 ```
+
+## Plot Ensemble Predictions
+
+```{r}
+map_year <- function(model_ens,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_offshore=F){
+  # domain to use
+  if(use_offshore){sf_to_use <- ext_offshore}else{sf_to_use <- ext}
+  gr <-  sf_to_use %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+    st_intersection(sf_to_use)
+  
+  gr_xy <- st_coordinates(gr)
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(model_ens$ens_est),0.99))
+  df <- model_ens %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(ens_est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(emocc_sf)
+  
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+  
+  else{
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      geom_sf(data=emocc_sf %>% summarise(),fill=NA)+
+      scale_fill_viridis_c(limits=scl)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')+
+      theme(legend.position=c(0.7,0.7))
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
+  }
+  out
+}
+```
+
+```{r,eval=F}
+dover2013 <- map_year(dover_ens_preds)
+dover2013
+```
+
 
 # Calculate Proportional Abundance
 
@@ -267,7 +330,7 @@ Write a function to extract mean predictions for each Atlantis polygon, by first
 
 ```{r}
 # the `preds` input here is the dataframe of ensemble predictions
-sdm_to_atlantis <- function(preds){
+ensemble_to_atlantis <- function(preds){
   
   # filter to the year of interest and exponentiate the estimated dependent variable
   df <- preds %>% 
@@ -310,19 +373,24 @@ sdm_to_atlantis <- function(preds){
 If you want to plot, can pick a year and join the spatial polygon data
 
 ```{r}
-plot_sdm_year <- function(atlantis_estimates,yr=2050){
+plot_sdm_year <- function(atlantis_estimates,sppname="",yr=2013){
   polys<- atlantis_estimates %>% 
     filter(year==yr) %>% 
+    mutate(perc_est=na_if(perc_est,0)) %>% 
     left_join(emocc_sf,by=c('box_id','area')) %>% 
     st_as_sf()
   bbox=st_bbox(emocc_sf)
+  
+  t <- paste(sppname,yr)
 
   out <- ggplot()+
     geom_sf(data=coast,fill='gray50')+
     geom_sf(data=polys,aes(fill=perc_est),col=NA,alpha=1)+
-    scale_fill_viridis_c()+
+    geom_sf(data=emocc_sf %>% summarise(),fill=NA,col='black')+
+    scale_fill_viridis_c(na.value="white")+
     xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
-    labs(fill=paste("Percent of Total Abundance by Box,",yr))
+    labs(title=paste("Percent of Total Abundance by Box,",t),fill="Percent")+
+    theme(legend.position=c(0.7,0.7))
   
   plot(out)
 }
@@ -330,12 +398,113 @@ plot_sdm_year <- function(atlantis_estimates,yr=2050){
 
 Test with our example model
 
-```{r}
-dover_to_atlantis <- sdm_to_atlantis(dover_ens_preds)
-plot_sdm_year(dover_to_atlantis,2013)
+```{r,eval=F}
+dover_to_atlantis <- ensemble_to_atlantis(dover_ens_preds)
+plot_sdm_year(dover_to_atlantis,yr=2013)
 ```
 
 ```{r}
 # write_rds(dover_to_atlantis,here('model output','atlantis sdms','dover sole.rds'))
 ```
+
+# Combined Function
+
+Write a function that wraps the above to go straight from a set of models to a dataframe of relative abundance in Atlantis polygons.
+
+```{r}
+sdm_to_atlantis <- function(model_df,use_offshore=F,save_rds=T){
+  # make ensemble predictions
+  n <- unique(model_df$spp)
+  ens <- model_df %>% 
+    ensemble_predictions(use_offshore=use_offshore)
+  out <- ens %>% ensemble_to_atlantis()
+  
+  # save plots of 2013 CPUE and Atlantis proportions
+  cpue_plot <- map_year(ens,use_offshore=use_offshore)
+  perc_plot <- plot_sdm_year(out,sppname=n,yr=2013)
+  
+  ggsave(here('model output','atlantis sdms',paste0(n,'_cpue_2013.png')),cpue_plot,h=6,w=5)
+  ggsave(here('model output','atlantis sdms',paste0(n,'_atlantis_2013.png')),perc_plot,h=6,w=5)
+  
+  if(save_rds){
+    write_rds(out,here('model output','atlantis sdms',paste0(n,'.rds')))
+  }
+  return(out)
+}
+```
+
+```{r,eval=F}
+dover <- sdm_to_atlantis(dover_models)
+```
+
+# Apply to Atlantis Species
+
+Source the sdmTMB modelling script, make a list of species to model, then try to fit ensemble models. For now, we do not include substrate as a covariate because GLORYS data does not have it.
+
+```{r, message=F, echo=F, include=F}
+rmarkdown::render(here::here('scripts','sdmTMB models.Rmd'),quiet=TRUE)
+```
+
+## Atlantis Demersal Fish Species
+
+Some Atlantis groups are groups of species (e.g., "Shallow small rockfish"). Therefore, we will make a matching key and a modified version of the trawl survey data that combines these groups.
+
+```{r}
+atlantis_groups <- read_csv(here('data','atlantis_demersal_groups.csv'),col_types = 'ccc')
+trawl_atlantis <- trawl_roms_utm %>% 
+  left_join(atlantis_groups,by=c('species'='trawl_name')) %>% 
+  filter(!is.na(code))
+unique(trawl_atlantis$code)
+unique(trawl_atlantis$group_name)
+
+# groups by Atlantis code/group and summarize
+trawl_atlantis <- trawl_atlantis %>% 
+  group_by(date,trawl_id,station,depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30,prop_hard_mixed,latitude,longitude,code,group_name) %>% 
+  summarise(cpue_kg_km2=sum(cpue_kg_km2)) %>% 
+  #rename so the models work
+  rename(species=code) %>% 
+  ungroup()
+```
+
+## Run Models
+
+```{r}
+nms <- unique(trawl_atlantis$species)
+# for all groups except FBP (lanternfish, deep vertical migrators), don't use offshore boxes for prediction
+nms <- nms %>% str_subset("FBP",negate=T)
+
+for(i in nms){
+  tic(paste("Processing",i))
+  model_df <- model_species(i,data=trawl_atlantis,use_substrate = F)
+  atlantis_df <- sdm_to_atlantis(model_df,use_offshore = F)
+  write_rds(atlantis_df,here('model output','atlantis sdms',paste0(i,'.rds')))
+  toc()
+}
+
+# model FBP last
+tic(paste("Processing FBP"))
+model_df <- model_species("FBP",data=trawl_atlantis,use_substrate = F)
+atlantis_df <- sdm_to_atlantis(model_df,use_offshore=T)
+write_rds(atlantis_df,here('model output','atlantis sdms','FBP.rds'))
+toc()
+```
+
+## Plots
+
+```{r,fig.width=10,fig.height=10}
+# plts<-purrr::map(nms,function(fl){
+#   x <- read_rds(here('model output','atlantis sdms',paste0(fl,'.rds')))
+#   plot_sdm_year(x,fl,yr=2013)
+# })
+# 
+# library(cowplot)
+# 
+# plot_grid(plotlist=plts[1:4],nrow=2,ncol=2)
+# plot_grid(plotlist=plts[5:8],nrow=2,ncol=2)
+# plot_grid(plotlist=plts[9:12],nrow=2,ncol=2)
+# plot_grid(plotlist=plts[13:16],nrow=2,ncol=2)
+# plot_grid(plotlist=plts[17:20],nrow=2,ncol=2)
+# plts[21]
+```
+
 

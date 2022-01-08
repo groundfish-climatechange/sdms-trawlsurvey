@@ -12,12 +12,8 @@ library(sf)
 library(rbgm) # Mike Sumner's Atlantis package for dealing with BGM files
 library(ncdf4)
 library(tidync)
+library(tictoc)
 library(RNetCDF)
-
-library(rgdal)
-library(raster)
-library(maps)
-library(mapdata)
 
 #######
 ## Loading polygons (Owen, you may have the polygon file in your toolbox)
@@ -47,12 +43,12 @@ time_seq <- crossing(year=2013:2099,month=1:12,day="01") %>%
   mutate(date=ymd(date)) %>% 
   mutate(seconds=date[1]%--%date %>% seconds() %>% as.numeric())
 
-sppdf <- time_seq %>% 
-  mutate(box_id=0) %>% 
-  complete(nesting(date,seconds),box_id=unique(emocc_sf$box_id)) %>% 
-  mutate(year=year(date)) %>% 
-  left_join(rel_est,by = c("year", "box_id"))
-data_array <- array(sppdf$rel_est,dim=c(length(unique(sppdf$box_id)),length(unique(sppdf$seconds))))
+# sppdf <- time_seq %>% 
+#   mutate(box_id=0) %>% 
+#   complete(nesting(date,seconds),box_id=unique(emocc_sf$box_id)) %>% 
+#   mutate(year=year(date)) %>% 
+#   left_join(rel_est,by = c("year", "box_id"))
+# data_array <- array(sppdf$rel_est,dim=c(length(unique(sppdf$box_id)),length(unique(sppdf$seconds))))
 
 make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=89,this_geom="CalCurrentV3_utm.bgm",t_units='seconds since 2013-01-01 00:00:00'){
   
@@ -93,10 +89,20 @@ make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=
 }
 
 # Test
-dover_rds <- read_rds(here('model output','atlantis sdms','dover sole.rds'))
-make_nc(atlantis_rds=dover_rds,sppname="FDP",nc_name =here('model output','atlantis sdms', "FDP.nc"),this_title="Dover sole spatial dists")
-x<-nc_open(here('model output','atlantis sdms', "FDP.nc"))
-nc_close(x)
+# dover_rds <- read_rds(here('model output','atlantis sdms','dover sole.rds'))
+# make_nc(atlantis_rds=dover_rds,sppname="FDP",nc_name =here('model output','atlantis sdms', "FDP.nc"),this_title="Dover sole spatial dists")
+# x<-nc_open(here('model output','atlantis sdms', "FDP.nc"))
+# nc_close(x)
+# 
+# y <- nc_open(here('data','JAC_distrib2.nc'))
+# y
 
-y <- nc_open(here('data','JAC_distrib2.nc'))
-y
+# apply to all models
+fls <- list.files(here('model output','atlantis sdms')) %>% str_subset(".rds") %>% str_remove(".rds")
+
+purrr::map(fls,function(fl){
+  tic(paste("Making ncdf for",fl))
+  x <- read_rds(here('model output','atlantis sdms',paste0(fl,'.rds')))
+  make_nc(atlantis_rds=x,sppname=fl,nc_name=here('model output','atlantis sdms',paste0(fl,'.nc')),this_title=paste(fl,"spatial dists"))
+  toc()
+})

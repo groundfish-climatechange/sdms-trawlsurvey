@@ -237,7 +237,7 @@ ensemble_predictions <- function(model_df,gcm='hadl'){
     set_names('temperature') %>% 
     mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
   
-  oxygen <- newdata %>% dplyr::select(contains('bt')) %>% 
+  oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
     set_names('oxygen') %>% 
     mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
 

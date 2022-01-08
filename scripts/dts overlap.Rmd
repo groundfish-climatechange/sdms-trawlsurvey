@@ -71,7 +71,7 @@ v %>%
 
 Use IPSL ESM for now
 
-```{r}
+```{r,eval=F}
 dover_models <- read_rds(here::here('model output','dover sole models.rds'))
 sable_models <- read_rds(here::here('model output','sablefish models.rds'))
 ls_models <- read_rds(here::here('model output','combined thornyheads models.rds'))
@@ -79,21 +79,33 @@ ls_models <- read_rds(here::here('model output','combined thornyheads models.rds
 dover_ens <- ensemble_predictions(dover_models,gcm='ipsl')
 sable_ens <- ensemble_predictions(sable_models,gcm='ipsl')
 ls_ens <- ensemble_predictions(ls_models,gcm='ipsl')
+# write_rds(dover_ens,here('model output','dts paper','dover_ensemble_preds_ipsl.rds'))
+# write_rds(sable_ens,here('model output','dts paper','sable_ensemble_preds_ipsl.rds'))
+# write_rds(ls_ens,here('model output','dts paper','thornyheads_ensemble_preds_ipsl.rds'))
 ```
+
+```{r}
+dover_ens <- read_rds(here('model output','dts paper','dover_ensemble_preds_ipsl.rds'))
+sable_ens <- read_rds(here('model output','dts paper','sable_ensemble_preds_ipsl.rds'))
+ls_ens<-read_rds(here('model output','dts paper','thornyheads_ensemble_preds_ipsl.rds'))
+```
+
 
 # Ensemble Abundance and COG
 
-```{r,fig.height=6,fig.width=8}
+```{r,eval=F}
 doverind <- make_index(dover_models)
 
 sableind <- make_index(sable_models)
 
 lsind <- make_index(ls_models)
 
-doverind
-sableind
-lsind
+# ggsave(here('model output','dts paper','dover_ensemble_index_ipsl.png'),doverind,h=6,w=8)
+# ggsave(here('model output','dts paper','sable_ensemble_index_ipsl.png'),sableind,h=6,w=8)
+# ggsave(here('model output','dts paper','thornyhead_ensemble_index_ipsl.png'),lsind,h=6,w=8)
 ```
+
+![](`here('model output','dts paper','dover_ensemble_index_ipsl.png')`)
 
 ```{r}
 dover_cog <- make_cog(dover_models,what="dat")
