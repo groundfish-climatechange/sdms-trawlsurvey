@@ -50,7 +50,8 @@ time_seq <- crossing(year=2013:2099,month=1:12,day="01") %>%
 #   left_join(rel_est,by = c("year", "box_id"))
 # data_array <- array(sppdf$rel_est,dim=c(length(unique(sppdf$box_id)),length(unique(sppdf$seconds))))
 
-make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=89,this_geom="CalCurrentV3_utm.bgm",t_units='seconds since 2013-01-01 00:00:00'){
+make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=89, stage="juvenile",
+                    this_geom="CalCurrentV3_utm.bgm",t_units='seconds since 2013-01-01 00:00:00'){
   
   # make data array from sdm .rds
   # estimates of relative distribution by atlantis box
@@ -67,14 +68,16 @@ make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=
   # construct the nc file
   nc_file <- create.nc(nc_name)
   
+  if(stage=="juvenile") {varname <- paste0(sppname,"_stage_0")} else{varname<-paste0(sppname,"_stage_1")}
+  
   dim.def.nc(nc_file, "t", unlim=TRUE)
   dim.def.nc(nc_file, "b", nbox) # manual
   
   var.def.nc(nc_file, "t", "NC_DOUBLE", "t")
   var.def.nc(nc_file,"t1","NC_INT","t")
-  var.def.nc(nc_file, sppname, "NC_DOUBLE", c("b","t"))
+  var.def.nc(nc_file, varname, "NC_DOUBLE", c("b","t"))
   
-  att.put.nc(nc_file, sppname, "_FillValue", "NC_DOUBLE", 0)
+  att.put.nc(nc_file, varname, "_FillValue", "NC_DOUBLE", 0)
   att.put.nc(nc_file, "t", "units", "NC_CHAR", t_units)
   att.put.nc(nc_file, "t", "dt", "NC_DOUBLE", 86400)
   att.put.nc(nc_file,"t1","long_name","NC_CHAR","t1")
@@ -84,7 +87,7 @@ make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=
   
   var.put.nc(nc_file, "t", time_seq$seconds)
   var.put.nc(nc_file,"t1",1:nrow(time_seq))
-  var.put.nc(nc_file, sppname, data_array)
+  var.put.nc(nc_file, varname, data_array)
   close.nc(nc_file)
 }
 
@@ -100,9 +103,25 @@ make_nc <- function(atlantis_rds,sppname,nc_name,times=time_seq,this_title,nbox=
 # apply to all models
 fls <- list.files(here('model output','atlantis sdms')) %>% str_subset(".rds") %>% str_remove(".rds")
 
+# the files need a specific naming convention, namely CODE_distrib_0 or CODE_distrib_1, where CODE is the species code, 
+# and 0 or 1 denotes juveniles and adults, respectively. For now, adult and juvenile distributions are identical for groundfish
+
+# make juveniles
 purrr::map(fls,function(fl){
   tic(paste("Making ncdf for",fl))
   x <- read_rds(here('model output','atlantis sdms',paste0(fl,'.rds')))
-  make_nc(atlantis_rds=x,sppname=fl,nc_name=here('model output','atlantis sdms',paste0(fl,'.nc')),this_title=paste(fl,"spatial dists"))
+  make_nc(atlantis_rds=x,sppname=fl,nc_name=here('model output','atlantis sdms',paste0(fl,'_stage_0.nc')),
+          stage = "juvenile",
+          this_title=paste(fl,"spatial dists"))
+  toc()
+})
+
+# make adults
+purrr::map(fls,function(fl){
+  tic(paste("Making ncdf for",fl))
+  x <- read_rds(here('model output','atlantis sdms',paste0(fl,'.rds')))
+  make_nc(atlantis_rds=x,sppname=fl,nc_name=here('model output','atlantis sdms',paste0(fl,'_stage_1.nc')),
+          stage = "adult",
+          this_title=paste(fl,"spatial dists"))
   toc()
 })
