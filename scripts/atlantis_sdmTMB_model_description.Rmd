@@ -1,0 +1,310 @@
+---
+title: "Groundfish SDMs for Atlantis"
+subtitle: "sdmTMB model convergence and ensemble statistics"
+author: "Owen Liu"
+date: "`r format(lubridate::today(), '%d %B, %Y')`"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+library(sdmTMB)
+library(rbgm)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(cowplot)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+library(knitr)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r rend, message=F, echo=F, include=F}
+rmarkdown::render(here::here('scripts','sdms_for_atlantis_glorys.Rmd'),quiet=TRUE)
+```
+
+```{r fxn,include=F,echo=F}
+# function to pull out important reported model performance statistics
+report_model_ensemble <- function(model_df){
+  weights_table <- model_df %>% dplyr::select(-model,-model_cv,-include_substrate,-model_num)
+  convergence <- purrr::map_int(model_df$model,function(m){m$model$convergence})
+  weights_table$Convergence <- convergence
+  range_params <- purrr::map_dbl(model_df$model,function(m){
+    tidy(m,effects='ran_pars') %>% slice(1) %>% pull(estimate)
+  })
+  weights_table$Matern_range <- range_params
+  model_params <- purrr::map(model_df$model,tidy,effects=c("fixed"))
+  knitr::kable(weights_table,digits = 3,col.names = c("Group","Spatial RF","Env Spline","Weight","Convergence","Matern Range")) %>% print()
+  purrr::walk(model_params,function(t){knitr::kable(t,digits=3) %>% print()})
+}
+```
+
+```{r,include=F,echo=F}
+nms <- unique(trawl_atlantis$species)
+# for all groups except FBP (lanternfish, deep vertical migrators), don't use offshore boxes for prediction
+nms <- nms %>% str_subset("FBP",negate=T)
+```
+
+Each functional group was modelled as an ensemble of four models. Each sub-model has the same predictors, but the models vary in the assumed functional form of the relationship between predictors and CPUE: models represent the relationship of CPUE with bottom temperature and oxygen as either linear or as a GAM spline. The general model formula, therefore, is:
+
+`cpue ~ +bottom_temperature + I(bottom_temperature^2) + bottom_oxygen +I(bottom_oxygen^2)`
+
+For the “linear” (non-spline) environmental relationships, and:
+
+`cpue~ +s(bottom_temperature, k = 3) + s(bottom_oxygen,k=3)`
+
+For the spline relationships. The `k=3` parameter denotes the maximum allowable “smoothness” of the fitted spline relationship. This spline k parameter is set at 3 for all models. Furthermore, the models can include spatial random fields, or not. Without spatial random fields, the models reduce to simple GLMs or GAMs. Models were fit with a Tweedie distribution.
+
+We assessed model convergence by interrogating the model output. A convergence code of 0 represents successful convergence, and additional information on model convergence can be obtained with a call to `mod$model$message`. Desirable return codes of this call are 3, 4, 5 and 6, all of which indicate convergence of the function (Gay 1990). Finally, the Matern practical range parameter, defined as the distance at which the spatial correlation in the data drops to $\rho$=0.13 (Lindgren and Rue 2015), was extracted for fitted models.
+
+With the option for linear or spline environmental relationships, and the option to include spatial random fields, each functional group therefore is modelled as an ensemble of four models. Models are then weighted using a likelihood-based posterior predictive stacking approach, described in Yao et al. 2018 (DOI: 10.1214/17-BA1091), and implemented in `sdmTMB::sdmTMB_stacking()`. These relative model weights are used to determine CPUE predictions, such that each predicted value is a weighted average of the predictions of all four models.
+
+In the following, each of the four models for each Atlantis demersal functional groups is described, along with their relative weighting.
+
+## ARR: Arrowtooth Flounder
+
+```{r ARR,include=F,message=F,error=F}
+model_df <- model_species("ARR",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## BOC: Bocaccio
+
+```{r BOC,include=F,message=F,error=F}
+model_df <- model_species("BOC",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## BRF: Black Rockfish
+
+```{r BRF,include=F,message=F,error=F}
+model_df <- model_species("BRF",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## DAR: Darkblotched Rockfish
+
+```{r DAR,include=F,message=F,error=F}
+model_df <- model_species("DAR",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FBP: Deep Vertical Migrators
+
+Lanternfish, California smoothtongue, Argentina sialis
+
+```{r FBP,include=F,message=F,error=F}
+model_df <- model_species("FBP",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDB: Shallow Small Rockfish
+
+Gopher, greenstriped, and stripetail rockfish
+
+```{r FDB,include=F,message=F,error=F}
+model_df <- model_species("FDB",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+
+## FDC: Deep Small Rockfish
+
+Aurora, sharpchin, and splitnose rockfish, and longspine thornyhead
+
+```{r FDC,include=F,message=F,error=F}
+model_df <- model_species("FDC",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDD: Deep Demersal Fish
+
+Eelpouts, slickheads, and grenadiers.
+
+```{r FDD,include=F,message=F,error=F}
+model_df <- model_species("FDD",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDE: Shallow Miscellaneous Fish
+
+White croaker, plainfin midshipman, and threadfin sculpin
+
+```{r FDE,include=F,message=F,error=F}
+model_df <- model_species("FDE",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDF: Flatfish
+
+Pacific sanddab, rex sole, slender sole, starry flounder, english sole, deepsea sole
+
+```{r FDF,include=F,message=F,error=F}
+model_df <- model_species("FDF",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDO: Deep Large Fish
+
+Blackgill, rougheye, and blackspotted rockfish, and shortspine thornyhead
+
+```{r FDO,include=F,message=F,error=F}
+model_df <- model_species("FDO",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDP: Dover Sole
+
+```{r FDP,include=F,message=F,error=F}
+model_df <- model_species("FDP",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FDS: Midwater Rockfish
+
+Chilipepper, vermillion, sunset, widow, and yellowtail rockfish
+
+```{r FDS,include=F,message=F,error=F}
+model_df <- model_species("FDS",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FMM: Hake
+
+Pacific hake
+
+```{r FMM,include=F,message=F,error=F}
+model_df <- model_species("FMM",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FMN: Sablefish
+
+```{r FMN,include=F,message=F,error=F}
+model_df <- model_species("FMN",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FPO: Canary Rockfish
+
+```{r FPO,include=F,message=F,error=F}
+model_df <- model_species("FPO",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FVD: Large Piscivorous Fish
+
+California halibut, Pacific halibut
+
+```{r FVD,include=F,message=F,error=F}
+model_df <- model_species("FVD",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FVS: Large Demersal Fish
+
+Lingcod, cabezon
+
+```{r FVS,include=F,message=F,error=F}
+model_df <- model_species("FVS",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## FVV: Shortbelly Rockfish
+
+```{r FVV,include=F,message=F,error=F}
+model_df <- model_species("FVV",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## PET: Petrale sole
+
+```{r PET,include=F,message=F,error=F}
+model_df <- model_species("PET",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## POP: Pacific Ocean Perch
+
+```{r POP,include=F,message=F,error=F}
+model_df <- model_species("POP",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## SHC: Cowcod
+
+```{r SHC,include=F,message=F,error=F}
+model_df <- model_species("SHC",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## SHR: Shallow Large Rockfish
+
+Brown, copper, greenspotted, and blue rockfish, and kelp greenling
+
+```{r SHR,include=F,message=F,error=F}
+model_df <- model_species("SHR",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+
+## YEL: Yelloweye Rockfish
+
+```{r YEL,include=F,message=F,error=F}
+model_df <- model_species("YEL",data=trawl_atlantis,use_substrate = F)
+```
+```{r,echo=F}
+report_model_ensemble(model_df)
+```
+

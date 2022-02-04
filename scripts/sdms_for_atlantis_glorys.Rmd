@@ -94,10 +94,23 @@ trawls <- read_rds(here::here('data','trawl','trawlID.rds'))
 max_depth <- max(trawls$depth_trawl,na.rm=T)
 
 # glorys bbox with areas that are too deep removed
+glorys_full <- glorys %>% summarise() %>% st_convex_hull()%>% 
+  st_difference(coast %>% summarise())
+
+# roms domain (for display purposes)
+roms_domain <- read_rds(here::here('data','roms_latlon_key.rds')) %>% 
+  mutate(roms_cell=row_number()) %>% 
+  st_as_sf(coords=c('lon','lat'),crs=4326) %>%
+  summarise() %>% 
+  st_convex_hull() %>%
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+  st_difference(coast %>% summarise())
+
 atlantis_glorys_extent <- glorys %>% 
   filter(depth<max_depth) %>% 
   st_bbox() %>% 
-  st_as_sfc()
+  st_as_sfc() %>% 
+  st_difference(coast %>% summarise())
 
 # atlantis polygons, summarized/unioned
 emocc_merged <- emocc_sf %>% summarise()
@@ -105,11 +118,18 @@ emocc_no_offshore_merged <- emocc_sf %>%
   filter(botz!=min(botz)) %>% 
   summarise()
 
-# plot our starting point
+# plot our starting point(s)
+ggplot()+
+  geom_sf(data=coast)+
+  geom_sf(data=glorys_full,fill='blue',alpha=0.5)+
+  geom_sf(data=emocc_sf,fill='red',alpha=0.5)+
+  geom_sf(data=roms_domain,fill='darkgreen',alpha=0.5)
+
 ggplot()+
   geom_sf(data=coast)+
   geom_sf(data=atlantis_glorys_extent,fill='blue',alpha=0.5)+
   geom_sf(data=emocc_no_offshore_merged,fill='red',alpha=0.5)
+
 
 # crop glorys bbox with atlantis polygons
 ext <- atlantis_glorys_extent %>% 
@@ -306,7 +326,9 @@ map_year <- function(model_ens,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_of
 
 ```{r,eval=F}
 dover2013 <- map_year(dover_ens_preds)
+dover2100 <- map_year(dover_ens_preds,yr_vec = 2100)
 dover2013
+dover2100
 ```
 
 
@@ -466,9 +488,10 @@ trawl_atlantis <- trawl_atlantis %>%
   ungroup()
 ```
 
+
 ## Run Models
 
-```{r}
+```{r,eval=F}
 nms <- unique(trawl_atlantis$species)
 # for all groups except FBP (lanternfish, deep vertical migrators), don't use offshore boxes for prediction
 nms <- nms %>% str_subset("FBP",negate=T)
@@ -507,4 +530,10 @@ toc()
 # plts[21]
 ```
 
+```{r,eval=F}
+# dover example
+dover <- read_rds(here('model output','atlantis sdms','FDP.rds'))
+dover2013 <- plot_sdm_year(dover,yr=2013)
+dover2100 <- plot_sdm_year(dover,yr=2100)
+```
 
