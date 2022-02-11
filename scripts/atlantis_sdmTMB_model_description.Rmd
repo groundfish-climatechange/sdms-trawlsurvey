@@ -21,7 +21,7 @@ library(future)
 library(tictoc)
 library(knitr)
 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE)
 options(dplyr.summarise.inform=FALSE)
 ```
 
@@ -74,6 +74,7 @@ model_df <- model_species("ARR",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## BOC: Bocaccio
@@ -83,6 +84,7 @@ model_df <- model_species("BOC",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## BRF: Black Rockfish
@@ -92,6 +94,7 @@ model_df <- model_species("BRF",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## DAR: Darkblotched Rockfish
@@ -101,6 +104,7 @@ model_df <- model_species("DAR",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FBP: Deep Vertical Migrators
@@ -112,6 +116,7 @@ model_df <- model_species("FBP",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDB: Shallow Small Rockfish
@@ -123,6 +128,7 @@ model_df <- model_species("FDB",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 
@@ -135,6 +141,7 @@ model_df <- model_species("FDC",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDD: Deep Demersal Fish
@@ -146,6 +153,7 @@ model_df <- model_species("FDD",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDE: Shallow Miscellaneous Fish
@@ -157,6 +165,7 @@ model_df <- model_species("FDE",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDF: Flatfish
@@ -168,6 +177,7 @@ model_df <- model_species("FDF",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDO: Deep Large Fish
@@ -179,6 +189,7 @@ model_df <- model_species("FDO",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDP: Dover Sole
@@ -188,6 +199,7 @@ model_df <- model_species("FDP",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FDS: Midwater Rockfish
@@ -199,6 +211,7 @@ model_df <- model_species("FDS",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FMM: Hake
@@ -210,6 +223,7 @@ model_df <- model_species("FMM",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FMN: Sablefish
@@ -219,6 +233,7 @@ model_df <- model_species("FMN",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FPO: Canary Rockfish
@@ -228,6 +243,7 @@ model_df <- model_species("FPO",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FVD: Large Piscivorous Fish
@@ -239,6 +255,7 @@ model_df <- model_species("FVD",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FVS: Large Demersal Fish
@@ -250,6 +267,7 @@ model_df <- model_species("FVS",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## FVV: Shortbelly Rockfish
@@ -259,6 +277,7 @@ model_df <- model_species("FVV",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## PET: Petrale sole
@@ -268,6 +287,7 @@ model_df <- model_species("PET",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## POP: Pacific Ocean Perch
@@ -277,6 +297,7 @@ model_df <- model_species("POP",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## SHC: Cowcod
@@ -286,6 +307,7 @@ model_df <- model_species("SHC",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## SHR: Shallow Large Rockfish
@@ -297,6 +319,7 @@ model_df <- model_species("SHR",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 
 ## YEL: Yelloweye Rockfish
@@ -306,5 +329,6 @@ model_df <- model_species("YEL",data=trawl_atlantis,use_substrate = F)
 ```
 ```{r,echo=F}
 report_model_ensemble(model_df)
+make_cog(model_df)
 ```
 

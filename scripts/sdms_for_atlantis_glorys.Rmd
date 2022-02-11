@@ -169,7 +169,7 @@ names(dover_models)
 
 # GLORYS Projection Function
 
-```{r,eval=F}
+```{r,eval=T}
 make_predictions_glorys <- function(modelobj){
 
   original_model_data <- modelobj$data
@@ -331,6 +331,90 @@ dover2013
 dover2100
 ```
 
+## Center of Gravity
+
+```{r}
+make_cog <- function(model_df,what="plot"){
+  # future::plan(multisession)
+  
+  sppname <- unique(model_df$spp) %>% tools::toTitleCase()
+  
+  # model weights
+  w <- model_df %>% pluck('weight')
+  if(all(is.na(w))) w <- rep(1,nrow(model_df))
+  
+  # tic('making predictions')
+  predictions_list <- model_df %>% pluck('model') %>% 
+    purrr::map(make_predictions_glorys) 
+  # toc()
+  
+  # tic('making cogs')
+  
+  cogs <- predictions_list %>% purrr::map_dfr(get_cog)
+  # toc()
+  
+  nyr <- length(unique(cogs$year))
+  ws <- rep(w,each=nyr)
+  
+  
+# reorganize output (X and Y coords)
+  cog_x <- cogs %>% 
+    filter(coord=="X")%>% 
+    rename_with(~paste0(.,"_x"),all_of(c('est','lwr','upr','se'))) %>% 
+    dplyr::select(-coord) %>% 
+    # add weights
+    mutate(weight=ws) %>% 
+    group_by(year) %>% 
+    summarise(w.est_x=weighted.mean(est_x,w=weight)) %>% 
+    ungroup()
+  cog_y <- cogs %>% 
+    filter(coord=="Y") %>% 
+    rename_with(~paste0(.,"_y"),all_of(c('est','lwr','upr','se')))%>% 
+    dplyr::select(-coord) %>% 
+    # add weights
+    mutate(weight=ws) %>% 
+    group_by(year) %>% 
+    summarise(w.est_y=weighted.mean(est_y,w=weight)) %>% 
+    ungroup()
+  cog_2d <- cog_x %>% left_join(cog_y,by='year') %>% 
+    # fix for weird non-overlap between ROMS fitting and GLORYs projections
+    mutate(year=year+26) %>% 
+    drop_na()
+  
+  cog_x_plot <- cog_2d %>% 
+    # ggplot(aes(year,w.est_x,ymax=upr_x,ymin=lwr_x))+
+    ggplot(aes(year,w.est_x))+
+    geom_line()+
+    # geom_ribbon(fill='red',alpha=0.5)+
+    scale_x_continuous(expand=c(0,5))+
+    labs(x="Year",y="Eastings (km)",title="Center of Gravity, X")
+  
+  cog_y_plot <- cog_2d %>% 
+    # ggplot(aes(year,w.est_y,ymax=upr_y,ymin=lwr_y))+
+    ggplot(aes(year,w.est_y))+
+    geom_line()+
+    # geom_ribbon(fill='red',alpha=0.5)+
+    scale_x_continuous(expand=c(0,5))+
+    labs(x="Year",y="Northings (km)",title="Center of Gravity, Y")
+  
+  cog2d_timeseries <- plot_grid(cog_x_plot,cog_y_plot,nrow=2)
+  
+  cog_2d_sf <- cog_2d %>% 
+    drop_na() %>% 
+    st_as_sf(coords=c('w.est_x','w.est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+  bbox <- st_bbox(ext_offshore)
+
+  cog_spatial <- ggplot()+
+      geom_sf(data=coast)+
+      geom_sf(data=cog_2d_sf,aes(col=year))+
+      labs(title=paste(sppname,"Center of Gravity"),col="Year")+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])
+
+  out <- plot_grid(cog_spatial,cog2d_timeseries,ncol=2)
+  if(what=="plot") return(out) else return(cog_2d)
+}
+```
 
 # Calculate Proportional Abundance
 
