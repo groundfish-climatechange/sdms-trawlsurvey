@@ -21,6 +21,7 @@ library(cowplot)
 library(RANN)
 library(furrr)
 library(future)
+library(viridis)
 library(tictoc)
 
 knitr::opts_chunk$set(echo = TRUE)
@@ -83,6 +84,39 @@ coast <- ne_countries(continent="North America",scale=50,returnclass = 'sf') %>%
 Produce groundfish species distribution models for use in the new version of the Atlantis ecosystem model. We will use `sdmTMB` to fit SDMs to high-resolution ROMS and trawl survey data, establishing the environmental niches of groundfish relative to bottom temperature and oxygen. Then, we use a GLORYS/ESM hybrid oceanography product to project species distributions out to 2100 in the California Current. Finally, we will translate those SDMs on to the Atlantis polygon/grid structure.
 
 Note: Model runs are described and performed in the `sdmTMB models.Rmd` script. Here, we apply the new GLORYS data for projection.
+
+# Calculate Distance from Shore
+
+For some applications of the GLORYS projection outputs, we want a measure of how far each cell is from shore. We calculate that here.
+
+```{r}
+coast %>% ggplot()+geom_sf()
+glorys_xy <- glorys %>% st_set_geometry(NULL) %>% distinct(longitude,latitude) %>% 
+  st_as_sf(coords=c('longitude','latitude'),crs=st_crs(glorys),remove=F)
+glorys_xy %>% ggplot()+geom_sf()
+coastsumm <- coast %>% summarise()
+glorys_coast_dist <- glorys_xy %>% st_distance(coastsumm)
+glorys_dist_to_coast <- glorys_xy %>% 
+  mutate(km_to_coast=as.numeric(glorys_coast_dist)) %>%
+  st_set_geometry(NULL)
+glorys_dist <- glorys %>% left_join(glorys_dist_to_coast,by=c('longitude','latitude'))
+
+glorys_dist_to_coast %>% 
+  ggplot(aes(longitude,latitude,col=km_to_coast))+
+  geom_point(size=0.5)
+
+# polygon for <= 100km offshore
+glorys_100km_buffer1 <- coastsumm %>% 
+  st_buffer(100) %>% 
+  st_difference(coastsumm) %>% 
+  st_crop(emocc_sf %>% summarise())
+ggplot(glorys_100km_buffer1)+
+  geom_sf()
+
+write_rds(glorys_dist_to_coast,here('data','grids','glorys_distance_to_coast.rds'))
+write_rds(glorys_100km_buffer1,here('data','grids','coast_100km_buffer.rds'))
+```
+
 
 # Define Projection Extent
 
@@ -214,6 +248,23 @@ dover_future1 <- make_predictions_glorys(dover_models %>% pluck('model',1))
 glimpse(dover_future1$data)
 ```
 
+# Diagnostic Plots
+
+```{r}
+create_diag <- function(m,return_what="plots"){
+  x <- m$data
+  x$pred <- predict(m)$est
+  x$resid <- residuals(m)[,1]
+  x <- x %>% select(year,longitude,latitude,cpue_kg_km2,pred,resid) %>% 
+    rename(X=longitude,Y=latitude,time=year) %>% 
+    filter(time %in% 2003:2010) %>% 
+    mutate(logcpue=log(cpue_kg_km2+1))
+  
+  if(return_what=="plots") vista::diagnostic_plots(x)
+  else(x)
+}
+```
+
 # Ensemble Predictions Function
 
 To create ensemble predictions, we calculate predictions for each species' model separately, then weight them using the weights established in model fitting (see `sdmTMB::sdmTMB_stacking()`).
@@ -275,15 +326,23 @@ ensemble_predictions <- function(model_df,use_offshore=F){
 }
 ```
 
-```{r,eval=F}
-dover_ens_preds <- ensemble_predictions(dover_models)
-glimpse(dover_ens_preds)
+```{r}
+create_diag_ensemble <- function(model_df,return_what="plots"){
+  all_preds <- purrr::map2_df(model_df$model,model_df$weight,function(df,wt){
+    create_diag(df,return_what = 'df') %>% mutate(weight=wt)})
+  all_preds %>% 
+    mutate(weighted_pred=pred*weight) %>% 
+    group_by(time,X,Y,logcpue) %>% 
+    summarise(enspred=sum(weighted_pred)) %>% 
+    ungroup()
+}
 ```
 
 ## Plot Ensemble Predictions
 
 ```{r}
-map_year <- function(model_ens,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_offshore=F){
+map_year <- function(model_df,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_offshore=F){
+  model_ens <- ensemble_predictions(model_df)
   # domain to use
   if(use_offshore){sf_to_use <- ext_offshore}else{sf_to_use <- ext}
   gr <-  sf_to_use %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
@@ -291,7 +350,7 @@ map_year <- function(model_ens,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_of
   
   gr_xy <- st_coordinates(gr)
   # scale for the legend, common within species
-  scl <- c(0,quantile(exp(model_ens$ens_est),0.99))
+  scl <- c(0,stats::quantile(exp(model_ens$ens_est),0.99))
   df <- model_ens %>% 
     filter(year%in%yr_vec) %>% 
     group_by(longitude,latitude) %>% 
@@ -324,11 +383,63 @@ map_year <- function(model_ens,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_of
 }
 ```
 
+```{r}
+# map_year <- function(model_df,yr_vec=c(2013),return_pred_df=F,plot_leg=T,use_offshore=F,n_slices=1){
+#   model_ens <- ensemble_predictions(model_df)
+#   # domain to use
+#   if(use_offshore){sf_to_use <- ext_offshore}else{sf_to_use <- ext}
+#   gr <-  sf_to_use %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+#     st_intersection(sf_to_use)
+#   
+#   gr_xy <- st_coordinates(gr)
+#   # scale for the legend, common within species
+#   scl <- c(0,quantile(exp(model_ens$ens_est),0.99))
+#   df <- model_ens %>% 
+#     filter(year%in%yr_vec) %>% 
+#     group_by(longitude,latitude) %>% 
+#     summarise(est=mean(ens_est,na.rm=T) %>% exp()) %>% 
+#     # rescale super large positive outliers for mapping purposes
+#     mutate(est=ifelse(est>scl[2],scl[2],est))
+#   # match nearest neighbors from predictions to grid
+#   pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+#   nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+#   gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns]) %>% 
+#     mutate(zone=ntile(Y,n_slices))
+#   
+#   # bbox=st_bbox(gr)
+#   
+#   if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+#   
+#   else{
+#     outs <- purrr::map(1:n_slices,function(x){
+#       tdf <- gr_pred %>% filter(zone==x)
+#       bbox=tdf %>% st_as_sf(coords=c("X","Y"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% st_bbox()
+#       p<-ggplot()+
+#         # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+#         # scale_color_viridis_c()+
+#         geom_raster(data=tdf,aes(x=X,y=Y,fill=est),interpolate=F)+
+#         geom_sf(data=emocc_sf %>% summarise(),fill=NA)+
+#         geom_sf(data=coast)+
+#         scale_fill_viridis_c(limits=scl)+
+#         coord_sf(datum=NA)+
+#         xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+#         labs(x="",y="",fill="CPUE",title=yr_vec)+
+#         theme(legend.position='right',
+#               legend.text = element_text(size=8))
+#     # if(!plot_leg) out <- out + theme(legend.position = 'None')
+#     })
+#    out <- plot_grid(plotlist=rev(outs),ncol=1,axis='l') 
+#   }
+#   out
+# }
+```
+
 ```{r,eval=F}
-dover2013 <- map_year(dover_ens_preds)
-dover2100 <- map_year(dover_ens_preds,yr_vec = 2100)
-dover2013
-dover2100
+dover2013 <- map_year(dover_models,plot_leg=F)
+dover2100 <- map_year(dover_models,yr_vec = 2100)
+plot_grid(dover2013,dover2100,nrow=1)
+# dover2013
+# dover2100
 ```
 
 ## Center of Gravity
@@ -414,6 +525,170 @@ make_cog <- function(model_df,what="plot"){
   out <- plot_grid(cog_spatial,cog2d_timeseries,ncol=2)
   if(what=="plot") return(out) else return(cog_2d)
 }
+```
+
+## Depth Distribution
+
+```{r}
+plot_depth_distribution <- function(model_df){
+  ens_preds <- ensemble_predictions(model_df)
+  y <- ens_preds %>% 
+    filter(year==2013|year==2100) %>%
+    mutate(cpue=exp(ens_est)) %>% 
+    group_by(year,depth) %>% 
+    summarise(cpue=mean(cpue,na.rm=T)) %>% 
+    ungroup() %>% 
+    group_by(year) %>% 
+    mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
+    arrange(depth) %>% 
+    mutate(cum_cpue=cumsum(prop_cpue)) %>% 
+    ungroup()
+  y %>% 
+    ggplot(aes(-depth,cum_cpue,col=factor(year)))+
+    geom_line(size=2)+
+    coord_flip()+
+    scale_color_manual(values=c("#2271B2","#d55e00"))+
+    labs(x="Depth (m)",y="Cumulative CPUE",col="Year",title=paste0(unique(model_df$spp)," Predicted Depth Distribution"))
+}
+```
+
+## Environmental Relationships
+
+```{r}
+latlons <- glorys_crop %>% distinct(latitude,longitude)
+cropto <- glorys_crop %>% 
+  st_as_sf(coords=c("temperature","o2")) %>% 
+  ungroup() %>% 
+  summarise() %>% 
+  st_convex_hull()
+
+pred_template <- crossing(
+  mean_temp_roms_30_norm=seq(min(glorys_crop$temperature)+0.2,max(glorys_crop$temperature)-0.2,length.out=100),
+  mean_oxygen_roms_30_norm=seq(min(glorys_crop$o2)+0.2,max(glorys_crop$o2)-0.2,length.out=150)) %>% 
+  bind_cols(latlons %>% slice_sample(n=15000,replace=T)) %>% mutate(year=2006)
+pred_template_sf <- pred_template %>% 
+      st_as_sf(coords=c("mean_temp_roms_30_norm","mean_oxygen_roms_30_norm"))
+tempr <- raster::raster(xmn=0,xmx=23,ymn=0,ymx=300,nrows=150,ncol=100)
+
+
+rasterize_affinities <- function(model_df, template_raster=tempr,return_what="plot"){
+  
+  original_model_data <- model_df %>% pluck('model',1,'data')
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data from GLORYS
+  newdata <- crossing(
+    temperature=seq(0,23,length.out=100),
+    o2=seq(0,300,length.out=150)) %>% 
+    bind_cols(latlons %>% slice_sample(n=15000,replace=T)) %>% mutate(year=2003) %>% 
+    # keep variable names from model fitting to ROMS
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t,
+           mean_oxygen_roms_30_norm=(o2-mean_oxy)/sd_oxy)
+  
+  preds <- purrr::map_df(1:nrow(model_df),function(x){
+    m <- model_df %>% pluck('model',x)
+    w <- model_df %>% pluck('weight',x)
+    ests <- m %>% predict(newdata=newdata,se_fit=F) %>% 
+      dplyr::select(longitude:est) %>% 
+      mutate(weight=w)
+    ests
+  })
+  
+  preddf <- preds %>% 
+    mutate(cpue=exp(est)) %>% 
+    mutate(w.cpue=cpue*weight) %>% 
+    group_by(temperature,o2) %>% 
+    summarise(w.est=sum(w.cpue)) %>% 
+    ungroup() %>% 
+    st_as_sf(coords=c("temperature","o2"),remove=F) %>% 
+    st_intersection(cropto)
+    # st_set_geometry(NULL)
+  
+  ul <- quantile(preddf$w.est,0.99,na.rm=T)
+  ll <- quantile(preddf$w.est,0.01,na.rm=T)
+  preddf <- preddf %>% 
+    mutate(w.est=ifelse(w.est>ul,ul,w.est)) %>% 
+    rename(cpue=w.est)
+  spp_r <- preddf %>% raster::rasterize(template_raster,field="cpue",fun=mean)
+  spp_df <- spp_r %>% raster::rasterToPoints() %>% as_tibble() %>% set_names(c('temp','oxy','cpue'))
+  # make the plot
+    
+  mainp <- spp_df %>% 
+    ggplot()+
+    geom_tile(aes(temp,oxy,fill=cpue))+
+    # geom_sf(data=cropto,color='black',fill=NA)+
+    # coord_sf(datum=NA)+
+    scale_fill_viridis(na.value='white',name="CPUE")+
+    labs(x="",y="",title='')+
+    annotate('text',3,270,label=unique(model_df$spp))+
+    theme(panel.background = element_rect(fill='white'),
+          # panel.background = element_rect(fill=viridis_pal()(1)),
+          # legend.position = c(0.1,0.7),
+          # legend.background = element_rect(fill='white'),
+          panel.grid.major = element_blank(),
+          panel.grid.minor=element_blank())
+  
+  if(return_what=="legend") return(get_legend(mainp))
+  else{
+      
+  m1 <- spp_df %>% group_by(temp) %>% summarise(m=sum(cpue)) %>% 
+    ggplot(aes(temp,m))+geom_area(fill='grey50')+theme_void()+
+    theme(plot.margin = margin(0,-0.1,-0.1,0,'cm'))
+  
+  m2 <- spp_df %>% group_by(oxy) %>% summarise(m=sum(cpue)) %>% 
+    ggplot(aes(oxy,m))+geom_area(fill='grey50')+theme_void()+coord_flip()+
+    theme(plot.margin = margin(0,0,0,0,'cm'))
+  
+  col1 <- plot_grid(m1,NULL,mainp+theme(legend.position='none',plot.margin = margin(0,0,0,0,'pt')),nrow=3,align='v',axis='lr',rel_heights = c(0.2,-0.07,1))
+  # grobs <- ggplotGrob(row1)
+  # g <- grid::rectGrob(gp = grid::gpar(col=0))
+  # row1 <- plot_grid(NULL,m1,NULL,nrow=1,rel_widths = c(0.5,5,1.15))
+  col2 <- plot_grid(NULL,m2,NULL,nrow=3,rel_heights = c(0.25,1,0.15))
+  out <- plot_grid(col1,col2,ncol=2,rel_widths =c(1,0.25))
+  # out <- plot_grid(m1,NULL,mainp+rremove('legend')+rremove(),m2,ncol=2,align='hv',rel_widths = c(1,0.25),rel_heights = c(0.25,1))
+  out
+  }
+
+}
+```
+
+## Hindcast Trawl Survey
+
+Compare to trawl survey observations, but using GLORYS projection
+```{r}
+trawl_sf <- trawls %>% 
+  st_as_sf(coords=c('lon_trawl','lat_trawl'),crs=4326) %>% st_transform(st_crs(glorys))
+glorys_grd <- glorys_crop %>% 
+  distinct(latitude,longitude) %>% 
+  st_as_sf(coords=c('longitude','latitude'),crs=st_crs(glorys),remove=F) %>% 
+  mutate(grdid=row_number())
+  
+nns <- nngeo::st_nn(trawl_sf,glorys_grd,maxdist = 50000) %>% unlist()
+trawl_glorys_join_key <- trawls %>% 
+  mutate(glorys_nn=nns) %>% 
+  left_join(glorys_grd %>% st_set_geometry(NULL),by=c("glorys_nn"="grdid")) %>% 
+  dplyr::select(station,glorys_nn)
+```
+
+```{r}
+# plot_survey_comparison <- function(model_df){
+#   spp=unique(model_df$spp)
+#   ens_preds <- ensemble_predictions(model_df) %>% 
+#     left_join(glorys_grd %>% st_set_geometry(NULL)) %>%
+#     dplyr::select(-longitude,-latitude)
+#   # join to trawl data
+#   dat <- trawl_atlantis %>%
+#     filter(species==spp) %>% 
+#     mutate(year=year(date)) %>% 
+#     left_join(trawl_glorys_join_key) %>% 
+#     left_join(ens_preds,by=c('year','glorys_nn'='grdid')) %>% 
+#     drop_na() %>% 
+#     mutate(cpue_pred=exp(ens_est))
+# }
 ```
 
 # Calculate Proportional Abundance
@@ -526,11 +801,16 @@ sdm_to_atlantis <- function(model_df,use_offshore=F,save_rds=T){
   out <- ens %>% ensemble_to_atlantis()
   
   # save plots of 2013 CPUE and Atlantis proportions
-  cpue_plot <- map_year(ens,use_offshore=use_offshore)
-  perc_plot <- plot_sdm_year(out,sppname=n,yr=2013)
+  cpue2013_plot <- map_year(model_df,use_offshore=use_offshore)
+  perc2013_plot <- plot_sdm_year(out,sppname=n,yr=2013)
+  cpue2100_plot <- map_year(model_df,yr_vec=2100,use_offshore=use_offshore)
+  perc2100_plot <- plot_sdm_year(out,sppname=n,yr=2100)
   
-  ggsave(here('model output','atlantis sdms',paste0(n,'_cpue_2013.png')),cpue_plot,h=6,w=5)
-  ggsave(here('model output','atlantis sdms',paste0(n,'_atlantis_2013.png')),perc_plot,h=6,w=5)
+  ggsave(here('model output','atlantis sdms',paste0(n,'_cpue_2013.png')),cpue2013_plot,h=6,w=5)
+  ggsave(here('model output','atlantis sdms',paste0(n,'_atlantis_2013.png')),perc2013_plot,h=6,w=5)
+    
+  ggsave(here('model output','atlantis sdms',paste0(n,'_cpue_2100.png')),cpue2100_plot,h=6,w=5)
+  ggsave(here('model output','atlantis sdms',paste0(n,'_atlantis_2100.png')),perc2100_plot,h=6,w=5)
   
   if(save_rds){
     write_rds(out,here('model output','atlantis sdms',paste0(n,'.rds')))

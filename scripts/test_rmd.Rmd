@@ -1,0 +1,76 @@
+---
+title: "Groundfish SDMs for Atlantis"
+subtitle: "sdmTMB model convergence and ensemble statistics"
+author: "Owen Liu"
+date: "`r format(lubridate::today(), '%d %B, %Y')`"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+library(sdmTMB)
+library(rbgm)
+library(tidyverse)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(cowplot)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+library(knitr)
+
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,results='asis')
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r rend, message=F, echo=F, include=F,eval=F}
+rmarkdown::render(here::here('scripts','sdms_for_atlantis_glorys.Rmd'),quiet=TRUE)
+```
+
+```{r fxn,include=F,echo=F,eval=F}
+# function to pull out important reported model performance statistics
+report_model_ensemble <- function(model_df){
+  weights_table <- model_df %>% dplyr::select(-model,-model_cv,-include_substrate,-model_num)
+  convergence <- purrr::map_int(model_df$model,function(m){m$model$convergence})
+  weights_table$Convergence <- convergence
+  range_params <- purrr::map_dbl(model_df$model,function(m){
+    tidy(m,effects='ran_pars') %>% slice(1) %>% pull(estimate)
+  })
+  weights_table$Matern_range <- range_params
+  model_params <- purrr::map(model_df$model,tidy,effects=c("fixed"))
+  knitr::kable(weights_table,digits = 3,col.names = c("Group","Spatial RF","Env Spline","Weight","Convergence","Matern Range")) %>% print()
+  purrr::walk(model_params,function(t){knitr::kable(t,digits=3) %>% print()})
+}
+```
+
+```{r,include=F,echo=F,eval=F}
+nms <- unique(trawl_atlantis$species)
+# for all groups except FBP (lanternfish, deep vertical migrators), don't use offshore boxes for prediction
+nms <- nms %>% str_subset("FBP",negate=T)
+```
+
+Each functional group was modelled as an ensemble of four models. Each sub-model has the same predictors, but the models vary in the assumed functional form of the relationship between predictors and CPUE: models represent the relationship of CPUE with bottom temperature and oxygen as either linear or as a GAM spline. The general model formula, therefore, is:
+
+`cpue ~ +bottom_temperature + I(bottom_temperature^2) + bottom_oxygen +I(bottom_oxygen^2)`
+
+For the “linear” (non-spline) environmental relationships, and:
+
+`cpue~ +s(bottom_temperature, k = 3) + s(bottom_oxygen,k=3)`
+
+For the spline relationships. The `k=3` parameter denotes the maximum allowable “smoothness” of the fitted spline relationship. This spline k parameter is set at 3 for all models. Furthermore, the models can include spatial random fields, or not. Without spatial random fields, the models reduce to simple GLMs or GAMs. Models were fit with a Tweedie distribution.
+
+We assessed model convergence by interrogating the model output. A convergence code of 0 represents successful convergence, and additional information on model convergence can be obtained with a call to `mod$model$message`. Desirable return codes of this call are 3, 4, 5 and 6, all of which indicate convergence of the function (Gay 1990). Finally, the Matern practical range parameter, defined as the distance at which the spatial correlation in the data drops to $\rho$=0.13 (Lindgren and Rue 2015), was extracted for fitted models.
+
+With the option for linear or spline environmental relationships, and the option to include spatial random fields, each functional group therefore is modelled as an ensemble of four models. Models are then weighted using a likelihood-based posterior predictive stacking approach, described in Yao et al. 2018 (DOI: 10.1214/17-BA1091), and implemented in `sdmTMB::sdmTMB_stacking()`. These relative model weights are used to determine CPUE predictions, such that each predicted value is a weighted average of the predictions of all four models.
+
+In the following, each of the four models for each Atlantis demersal functional groups is described, along with their relative weighting.
+
+$$D= 1 - 0.5*\sum_{1}^{n}{|p_{k,i}-p_{j,i}|}$$
+
+$$ L = \frac{\sum_{1}^{n}{p_{k,i}}*p_{j,i}}{\sqrt{{\sum_{1}^{n}p_{k,i}^2}{\sum_{1}^{n}p_{j,i}^2}}}$$
+
+$$ GIC = 1-\frac{\Delta CG_{k,j}^2}{\Delta CG_{k,j}^2+I_k+I_j}$$
+
+$$I_k =\frac{\sum_{i}^{n}(x_i-CG)^2*k_i}{\sum_{i}^{n}k_i}$$

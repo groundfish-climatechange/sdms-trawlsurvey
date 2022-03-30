@@ -499,6 +499,82 @@ make_cog <- function(model_df,gcm='hadl',what="plot"){
 ```{r,eval=F}
 make_cog(dover_models)
 ```
+## Depth Distribution
+
+```{r}
+plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2100){
+  y <- ens_preds %>% 
+    filter(year==start_year|year==end_year) %>%
+    mutate(cpue=exp(ens_est)) %>% 
+    rename(depth=depth_m) %>% 
+    group_by(year,depth) %>% 
+    summarise(cpue=mean(cpue,na.rm=T)) %>% 
+    ungroup() %>% 
+    group_by(year) %>% 
+    mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
+    arrange(desc(depth)) %>% 
+    mutate(cum_cpue=cumsum(prop_cpue)) %>% 
+    ungroup()
+  y %>% 
+    ggplot(aes(depth,cum_cpue,col=factor(year)))+
+    geom_line(size=2)+
+    coord_flip()+
+    scale_color_manual(values=c("#2271B2","#d55e00"))+
+    labs(x="Depth (m)",y="Cumulative CPUE",title=paste(name,"Predicted Depth Distribution"),col="Year")
+}
+```
+
+## Distance from Shore
+
+```{r}
+roms_xy <- roms %>% 
+  distinct(latitude,longitude) %>%
+  st_as_sf(coords=c('longitude','latitude'),crs=st_crs(coast),remove=F)
+# roms_xy %>% ggplot()+geom_sf()
+
+coastsumm <- coast %>% summarise()
+roms_coast_dist <- roms_xy %>% st_distance(coastsumm)
+
+roms_dist_to_coast <- roms_xy %>% 
+  mutate(km_to_coast=as.numeric(roms_coast_dist)) %>%
+  st_set_geometry(NULL)
+roms_dist <- roms %>% left_join(roms_dist_to_coast,by=c('longitude','latitude'))
+
+write_rds(roms_dist_to_coast,here('data','roms_distance_to_shore.rds'))
+```
+
+```{r}
+plot_dist_to_shore <- function(ens_preds,name="",include_legend=T){
+  d <- ens_preds %>% 
+    left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+    group_by(year,lat) %>% 
+    mutate(totest = sum(exp(ens_est))) %>% 
+    mutate(rel_est=exp(ens_est)/totest) %>% 
+    mutate(w.dist=rel_est*km_to_coast) %>% 
+    summarise(w.dist=sum(w.dist)) %>% 
+    ungroup()
+  if(include_legend){
+      p <- d %>% 
+        ggplot(aes(lat,w.dist,col=year,group=year))+
+        geom_line()+
+        scale_color_viridis(option="A")+
+        scale_y_continuous(limits=c(0,100))+
+        coord_flip()+
+        # theme(legend.position = c(0.8,0.7))+
+        labs(y="Distance from Shore (km)",x="Latitude",col="Year")
+  } else {
+      p <- d %>% 
+        ggplot(aes(lat,w.dist,col=year,group=year))+
+        geom_line()+
+        scale_color_viridis(option="A",guide="none")+
+        scale_y_continuous(limits=c(0,100))+
+        coord_flip()+
+        labs(y="",x="",col="")
+  }
+
+  p
+}
+```
 
 ## Hovmoller Plots
 

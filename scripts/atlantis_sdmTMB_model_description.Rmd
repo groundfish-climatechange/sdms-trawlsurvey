@@ -21,7 +21,7 @@ library(future)
 library(tictoc)
 library(knitr)
 
-knitr::opts_chunk$set(echo = TRUE,warning=FALSE)
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,results='asis')
 options(dplyr.summarise.inform=FALSE)
 ```
 
@@ -75,8 +75,14 @@ model_df <- model_species("ARR",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## BOC: Bocaccio
 
 ```{r BOC,include=F,message=F,error=F}
@@ -85,8 +91,14 @@ model_df <- model_species("BOC",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## BRF: Black Rockfish
 
 ```{r BRF,include=F,message=F,error=F}
@@ -95,8 +107,14 @@ model_df <- model_species("BRF",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## DAR: Darkblotched Rockfish
 
 ```{r DAR,include=F,message=F,error=F}
@@ -105,8 +123,14 @@ model_df <- model_species("DAR",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FBP: Deep Vertical Migrators
 
 Lanternfish, California smoothtongue, Argentina sialis
@@ -117,8 +141,14 @@ model_df <- model_species("FBP",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDB: Shallow Small Rockfish
 
 Gopher, greenstriped, and stripetail rockfish
@@ -129,9 +159,14 @@ model_df <- model_species("FDB",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
-
+\newpage
 ## FDC: Deep Small Rockfish
 
 Aurora, sharpchin, and splitnose rockfish, and longspine thornyhead
@@ -142,8 +177,14 @@ model_df <- model_species("FDC",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDD: Deep Demersal Fish
 
 Eelpouts, slickheads, and grenadiers.
@@ -154,8 +195,14 @@ model_df <- model_species("FDD",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDE: Shallow Miscellaneous Fish
 
 White croaker, plainfin midshipman, and threadfin sculpin
@@ -166,8 +213,14 @@ model_df <- model_species("FDE",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDF: Flatfish
 
 Pacific sanddab, rex sole, slender sole, starry flounder, english sole, deepsea sole
@@ -178,8 +231,14 @@ model_df <- model_species("FDF",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDO: Deep Large Fish
 
 Blackgill, rougheye, and blackspotted rockfish, and shortspine thornyhead
@@ -190,8 +249,14 @@ model_df <- model_species("FDO",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDP: Dover Sole
 
 ```{r FDP,include=F,message=F,error=F}
@@ -200,8 +265,14 @@ model_df <- model_species("FDP",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FDS: Midwater Rockfish
 
 Chilipepper, vermillion, sunset, widow, and yellowtail rockfish
@@ -212,8 +283,14 @@ model_df <- model_species("FDS",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FMM: Hake
 
 Pacific hake
@@ -224,8 +301,14 @@ model_df <- model_species("FMM",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FMN: Sablefish
 
 ```{r FMN,include=F,message=F,error=F}
@@ -234,8 +317,14 @@ model_df <- model_species("FMN",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FPO: Canary Rockfish
 
 ```{r FPO,include=F,message=F,error=F}
@@ -244,8 +333,14 @@ model_df <- model_species("FPO",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FVD: Large Piscivorous Fish
 
 California halibut, Pacific halibut
@@ -256,8 +351,14 @@ model_df <- model_species("FVD",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FVS: Large Demersal Fish
 
 Lingcod, cabezon
@@ -268,8 +369,14 @@ model_df <- model_species("FVS",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## FVV: Shortbelly Rockfish
 
 ```{r FVV,include=F,message=F,error=F}
@@ -278,8 +385,14 @@ model_df <- model_species("FVV",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## PET: Petrale sole
 
 ```{r PET,include=F,message=F,error=F}
@@ -288,8 +401,14 @@ model_df <- model_species("PET",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## POP: Pacific Ocean Perch
 
 ```{r POP,include=F,message=F,error=F}
@@ -298,8 +417,14 @@ model_df <- model_species("POP",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## SHC: Cowcod
 
 ```{r SHC,include=F,message=F,error=F}
@@ -308,8 +433,14 @@ model_df <- model_species("SHC",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## SHR: Shallow Large Rockfish
 
 Brown, copper, greenspotted, and blue rockfish, and kelp greenling
@@ -320,8 +451,14 @@ model_df <- model_species("SHR",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
 
+\newpage
 ## YEL: Yelloweye Rockfish
 
 ```{r YEL,include=F,message=F,error=F}
@@ -330,5 +467,9 @@ model_df <- model_species("YEL",data=trawl_atlantis,use_substrate = F)
 ```{r,echo=F}
 report_model_ensemble(model_df)
 make_cog(model_df)
+rasterize_affinities(model_df)
+plot_depth_distribution(model_df)
+map2013 <- map_year(model_df,plot_leg=F)
+map2100 <- map_year(model_df,yr_vec = 2100)
+plot_grid(map2013,map2100,nrow=1)
 ```
-
