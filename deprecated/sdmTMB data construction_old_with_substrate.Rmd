@@ -268,11 +268,11 @@ CCA = read_sf(here('data','grids','kv299cy7357.shp')) %>% st_transform("+proj=ut
 trawl_bbox <- gr_sp %>% st_difference(CCA)
 
 # to make the correct domain, crop trawl to coastline
-projection_extent <- trawl_bbox %>% 
+out <- trawl_bbox %>% 
   st_difference(coast %>% summarise())
 
 # save the outline
-write_rds(projection_extent,here::here('data','cropped_domain_for_projected_sdms.rds'))
+write_rds(out,here::here('data','cropped_domain_for_projected_sdms.rds'))
 ```
 
 ```{r,eval=F}
@@ -287,40 +287,8 @@ ggplot()+
 # cropped
 ggplot()+
   geom_sf(data=coast)+
-  geom_sf(data=projection_extent,fill='red',alpha=0.5)+
+  geom_sf(data=out,fill='red',alpha=0.5)+
   labs(title="Domain for Projected SDMs")
-```
-
-## ROMS for Projection
-
-```{r,eval=FALSE}
-# only run these chunks if you need to reproduce the projection roms (UTM, clipped to projection extent) data
-roms <- read_rds(here::here('data','mean_30dmean_bt_ox_allmodels_1980_2100.rds'))
-glimpse(roms)
-```
-
-Calculate latitude and longitude in UTM coordinates, which is what the models were fitted with. NOTE: this is also where we crop these ROMS data to the designated SDM projection domain (see above)
-
-```{r, eval=FALSE}
-roms <- roms %>% 
-  # convert to sf object
-  st_as_sf(coords=c('lon','lat'),crs=4326,remove=F) %>%
-  # transform to UTM zone 10
-  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
-  # crop to SDM extent
-  st_intersection(projection_extent) %>%
-  # add new coords as vars
-  mutate(latitude = sf::st_coordinates(.)[,2],
-         longitude = sf::st_coordinates(.)[,1]) %>%
-  # convert back to normal df
-  st_set_geometry(NULL)
-
-# add depth
-
-```
-
-```{r,eval=F}
-write_rds(roms,here('data','roms_for_sdm_projection.rds'))
 ```
 
 ## ROMS Distance to Shore
@@ -365,7 +333,7 @@ roms_dist_to_coast <- read_rds(here::here('data','roms_distance_to_shore.rds'))
 
 ```{r}
 hab <- read_rds(here('data','substrate','prop_hard_by_ROMS_cell.rds'))
-# the roms grid, to match depth and habitat values to lat/lon (from process_substrate_data.Rmd)
+# the roms grid, to match habitat values to lat/lon (from process_substrate_data.Rmd)
 roms_ll <- read_rds(here::here('data','roms_latlon_key_topleft_start.rds')) %>% 
   mutate(roms_cell=row_number())
 
@@ -376,7 +344,6 @@ hab <- hab %>%
 ```
 
 ## DTS Trawl Footprints
-
 ```{r}
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 

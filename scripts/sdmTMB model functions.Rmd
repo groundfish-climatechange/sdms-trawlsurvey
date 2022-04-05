@@ -625,9 +625,12 @@ plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2
   y %>% 
     ggplot(aes(depth,cum_cpue,col=factor(year)))+
     geom_line(size=2)+
+    # xlim(-2000,0)+
+    # 700 fathom line
+    geom_vline(xintercept=-1280.16,linetype=2)+
     coord_flip()+
     scale_color_manual(values=c("#2271B2","#d55e00"))+
-    labs(x="Depth (m)",y="Cumulative CPUE",title=paste(name,"Predicted Depth Distribution"),col="Year")
+    labs(x="Depth (m)",y="Cumulative CPUE",title="",col="Year")
 }
 ```
 
@@ -650,7 +653,7 @@ plot_dist_to_shore <- function(ens_preds,include_legend=T){
         ggplot(aes(lat,w.dist,col=year,group=year))+
         geom_line()+
         scale_color_viridis(option="A")+
-        scale_y_continuous(limits=c(0,100))+
+        scale_y_reverse(limits=c(90,20))+
         coord_flip()+
         # theme(legend.position = c(0.8,0.7))+
         labs(y="Distance from Shore (km)",x="Latitude",col="Year")
@@ -659,7 +662,7 @@ plot_dist_to_shore <- function(ens_preds,include_legend=T){
         ggplot(aes(lat,w.dist,col=year,group=year))+
         geom_line()+
         scale_color_viridis(option="A",guide="none")+
-        scale_y_continuous(limits=c(0,100))+
+        scale_y_reverse(limits=c(90,20))+
         coord_flip()+
         labs(y="",x="",col="")
   }
@@ -667,6 +670,57 @@ plot_dist_to_shore <- function(ens_preds,include_legend=T){
   p
 }
 ```
+
+Similar to the above, this calculates a map rather than a line plot.
+
+```{r}
+create_lines <- function(df){
+  lines <- df %>%
+    group_by(lat) %>% 
+    mutate(totest = sum(exp(ens_est))) %>% 
+    mutate(rel_est=exp(ens_est)/totest) %>% 
+    mutate(w.lon=rel_est*lon) %>% 
+    summarise(w.lon=sum(w.lon)) %>% 
+    ungroup() %>% 
+    st_as_sf(coords=c("w.lon","lat"),crs=4326) %>% 
+    st_transform(st_crs(coast)) %>% 
+    st_coordinates() %>% st_linestring()
+}
+
+map_dist_to_shore <- function(ens_preds,include_legend=T){
+  d <- ens_preds %>% 
+    group_by(year) %>% 
+    nest() %>% 
+    mutate(centroid_line=purrr::map(data,create_lines)) %>% 
+    ungroup() %>% 
+    dplyr::select(year,centroid_line) %>% 
+    st_as_sf() %>% 
+    st_set_crs(st_crs(coast))
+  bbox <- st_bbox(d)
+  if(include_legend){
+      p <-ggplot()+
+        geom_sf(data=coast,color='gray50')+
+        geom_sf(data=d,aes(col=year))+
+        coord_sf(datum=NA)+
+        scale_color_viridis(option="A")+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(y="",x="",col="Year")+
+        theme(plot.margin = unit(c(0,0,0,0), "cm"))
+  } else {
+      p <-ggplot()+
+        geom_sf(data=coast,color='gray50')+
+        geom_sf(data=d,aes(col=year))+
+        coord_sf(datum=NA)+
+        scale_color_viridis(option="A",guide="none")+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(y="",x="",col="Year")+
+        theme(plot.margin = unit(c(0,0,0,0), "cm"))
+  }
+
+  p
+}
+```
+
 
 ## Hovmoller Plots
 
@@ -859,3 +913,202 @@ save_projection_plots <- function(model_df,gcm='hadl',savedir=here::here('plots'
   toc()
 }
 ```
+
+# Species Overlap Metrics
+
+Overlap metrics based on Carroll et al. (2019). These take the ensemble prediction outputs for two different species, produced by the `ensemble_predictions()` function above. The global index of collocation also requires the center of gravity calculations from `get_cog(what='df')`.
+
+## Schoener's D
+
+```{r}
+#Schoener's D
+schoeners <- function(dat1, dat2) {
+  p1 <- dat1$ens_est %>% exp()
+  p2 <- dat2$ens_est %>% exp()
+  p_p1 <- p1/sum(p1, na.rm = T)
+  p_p2 <- p2/sum(p2, na.rm = T)
+  1 - 0.5 * (sum(abs(p_p1-p_p2), na.rm = T))
+}
+```
+
+## Local Index of Collocation
+
+```{r}
+lic <- function(dat1,dat2) {
+  p1 <- dat1$ens_est %>% exp()
+  p2 <- dat2$ens_est %>% exp()
+  p_p1 <- p1/sum(p1, na.rm = T)
+  p_p2 <- p2/sum(p2, na.rm = T)
+  sum(p_p1*p_p2, na.rm = T)/(sqrt(sum(p_p1^2, na.rm = T)*sum(p_p2^2, na.rm = T)))
+}
+
+# if you want the metric to be spatial (grid-scale)
+lic_grid <- function(dat1,dat2) {
+  p1 <- dat1$ens_est %>% exp()
+  p2 <- dat2$ens_est %>% exp()
+  p_p1 <- p1/sum(p1, na.rm = T)
+  p_p2 <- p2/sum(p2, na.rm = T)
+  lic_vec <- (p_p1*p_p2)/(sqrt(sum(p_p1^2)*sum(p_p2^2)))
+  lic_vec
+}
+```
+
+```{r,eval=F}
+# relationship between LIC and D?
+test <- crossing(k=seq(0,1000,length.out = 100),j=seq(0,1000,length.out = 100)) %>%
+  mutate(pk=k/sum(k),pj=j/sum(j)) %>% 
+  mutate(L=(pk*pj)/(sqrt(sum(pk^2)*sum(pj^2)))) %>% 
+  mutate(Dpart=abs(pk-pj),D=1-0.5*Dpart)
+
+licp <- test %>%
+  ggplot(aes(k,j,fill=L))+
+  geom_raster()+
+  coord_equal()+
+  scale_fill_viridis(option="A")+
+  theme(legend.position = 'left',
+        legend.text=element_text(size=10))
+Dp <- test %>%
+  ggplot(aes(k,j,fill=D))+
+  geom_raster()+
+  coord_equal()+
+  scale_fill_viridis(option="A")+
+  theme(legend.position = 'right',
+        legend.text=element_text(size=10))
+lic_d_plot <- plot_grid(licp,Dp,nrow=1)
+
+# part 2
+licp2 <- test %>% 
+  filter(j==sort(unique(test$j))[50]) %>% 
+  ggplot(aes(k,L))+
+  geom_line()+
+  annotate('text',x=200,y=0.000125,label="j=500",size=5)
+Dp2 <- test %>% 
+  filter(j==sort(unique(test$j))[50]) %>% 
+  ggplot(aes(k,D))+
+  geom_line()+
+  annotate('text',x=200,y=0.99999,label="j=500",size=5)
+lic_d_plot2 <- plot_grid(licp2,Dp2,nrow=1)
+lic_d_plots <- plot_grid(lic_d_plot,lic_d_plot2,nrow=2,labels='auto')
+# ggsave(here('model output','dts paper','lic_d_comparison.png'),lic_d_plots,w=8,h=6)
+```
+
+
+## Global Index of Collocation
+
+```{r}
+gic <- function(dat1,dat2,cog1,cog2){
+  k_x <- dat1$longitude
+  k_y <- dat1$latitude
+  k <- dat1$ens_est %>% exp()
+  k_cogx <- cog1$w.est_x
+  k_cogy <- cog1$w.est_y
+  j_x <- dat2$longitude
+  j_y <- dat2$latitude
+  j <- dat2$ens_est %>% exp()
+  j_cogx <- cog2$w.est_x
+  j_cogy <- cog2$w.est_y
+  
+  k_ix <- k_x-k_cogx
+  k_iy <- k_y-k_cogy
+  k_i <- sqrt(k_ix^2+k_iy^2)
+  k_inert <- sum(k*(k_i^2),na.rm=T)/sum(k,na.rm=T)
+  
+  j_ix <- j_x-j_cogx
+  j_iy <- j_y-j_cogy
+  j_i <- sqrt(j_ix^2+j_iy^2)
+  j_inert <- sum(j*(j_i^2),na.rm=T)/sum(j,na.rm=T)
+  
+  GIC <- (((k_cogx - j_cogx)^2+(k_cogy - j_cogy)^2)/ (((k_cogx-j_cogx)^2+(k_cogy-j_cogy)^2)+k_inert + j_inert))
+  if(!is.na(GIC))
+    GIC <- 1-GIC
+  else GIC <- 1
+  GIC
+}
+```
+
+# Fishing Footprints
+
+Calculate an ensemble CPUE density timeseries within particular port-based fishing footprints for the DTS trawl fleet. 
+
+```{r}
+calc_footprint_dens_ts <- function(ens_preds,fp=footprints,what="plot"){
+  d <- ens_preds %>% 
+    filter(year>2019) %>% 
+    mutate(est=ens_est) %>%
+    # mutate(est=exp(ens_est)) %>%
+    st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+    st_join(footprints) %>% 
+    st_set_geometry(NULL) %>% 
+    filter(!is.na(port_name)) %>% 
+    group_by(port_name,year) %>% 
+    summarise(mean_cpue=mean(est,na.rm=T)) %>% 
+    ungroup()
+  if(what=="plot"){
+    out <- d %>% 
+      ggplot(aes(year,mean_cpue,col=port_name))+
+      geom_line(size=1)+
+      # geom_point(size=1)+
+      # geom_smooth(se=F)+
+      scale_color_npg()+
+      labs(x="Year",y="Log CPUE (kg per sq. km)",col="Port Group")
+      # theme(legend.position = "bottom")
+  } else {out = d}
+  
+  out
+}
+
+# Could also calculate a relative change timeseries (% change from 2020 baseline)
+calc_footprint_reldens_ts <- function(ens_preds,fp=footprints,what="plot"){
+  d <- ens_preds %>% 
+    filter(year>2019) %>% 
+    mutate(est=exp(ens_est)) %>%
+    # mutate(est=exp(ens_est)) %>%
+    st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+    st_join(footprints) %>% 
+    st_set_geometry(NULL) %>% 
+    filter(!is.na(port_name)) %>% 
+    group_by(port_name,year) %>% 
+    summarise(mean_cpue=mean(est,na.rm=T)) %>% 
+    # measure the difference from 2020 baseline
+    ungroup() %>% 
+    group_by(port_name) %>% 
+    mutate(perc_change=(mean_cpue/mean_cpue[year==2020]*100-100)) %>% 
+    ungroup()
+  if(what=="plot"){
+    out <- d %>% 
+      ggplot(aes(year,perc_change,col=port_name))+
+      geom_line(size=1)+
+      # geom_point(size=1)+
+      # geom_smooth(se=F)+
+      scale_color_npg()+
+      labs(x="Year",y="CPUE Change Relative to 2020 (%)",col="Port Group")
+      # theme(legend.position = "bottom")
+  } else {out = d}
+  
+  out
+}
+```
+
+Can also use the footprints combined with `lic_grid` to calculate a similar timeseries for the value of the overlap index within fishing footprints over time.
+
+```{r}
+calc_footprint_overlap_ts <- function(ens1,ens2,fp=footprints){
+  ens1l <- ens1 %>% group_split(year)
+  ens2l<- ens2 %>% group_split(year)
+  lic_vec <- purrr::map2(ens1l,ens2l,lic_grid) %>% unlist()
+  overlap_ts <- ens1 %>% 
+    dplyr::select(-ens_est) %>% 
+    mutate(lic=lic_vec) %>% 
+    # mutate(est=exp(ens_est)) %>%
+    st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+    st_join(footprints) %>% 
+    st_set_geometry(NULL) %>% 
+    filter(!is.na(port_name)) %>% 
+    group_by(port_name,year) %>% 
+    summarise(sum_lic=sum(lic,na.rm=T)) %>% 
+    ungroup()
+  
+  overlap_ts
+}
+```
+
