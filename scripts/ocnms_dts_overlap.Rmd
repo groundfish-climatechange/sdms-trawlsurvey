@@ -1,0 +1,189 @@
+---
+title: "DTS and OCNMS"
+author: "Owen Liu"
+date: '2022-05-04'
+output: html_document
+---
+
+```{r, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(viridis)
+# vista is Eric Ward's library for looking at outputs
+library(vista)
+library(cowplot)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+library(ggsci)
+library(ggpubr)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=12,color="black"),
+        legend.text = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=12,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+# Data
+
+Load functions and data used for models. This command sources code and data from the `sdmTMB model functions` and `sdmTMB data construction` scripts.
+
+```{r}
+rmarkdown::render(here::here('scripts','sdmTMB model functions.Rmd'),quiet=TRUE)
+```
+
+```{r}
+ocnms <- read_sf(here('data','grids','ocnms_py.shp')) %>% st_transform(st_crs(coast))
+```
+
+```{r}
+#OCNMS Map
+bbox1 <- st_bbox(ocnms)
+study_area <- ggplot()+
+  geom_sf(data=coast,fill='gray80')+
+  geom_sf(data=ocnms,fill='blue',alpha=0.5,col='black')+
+  # coord_sf(datum=NA)+
+  xlim(bbox1[1],bbox1[3])+ylim(bbox1[2],bbox1[4])
+study_area
+```
+
+# Mean Change in Conditions
+
+Calculate and visualize the mean change in bottom temperature and oxygen for the study area, according to the ROMS-IPSL model.
+
+```{r}
+roms_sf <- roms %>% st_as_sf(coords=c('lon','lat'),crs=4326) %>% st_transform(st_crs(ocnms))
+ocnms_roms <- roms_sf %>% st_intersection(ocnms) %>% st_set_geometry(NULL)
+
+roms_bt_oxy_ts <- ocnms_roms %>% 
+  dplyr::select(year,latitude,longitude,contains('30d_ipsl')) %>% 
+  group_by(year) %>% 
+  summarise(bt=mean(mean_bt_30d_ipsl),
+            oxy=mean(mean_oxy_bottom_30d_ipsl)) %>% 
+  ungroup()
+roms_bt_ts_plot <- roms_bt_oxy_ts %>% 
+  filter(year>2019) %>% 
+  ggplot(aes(year,bt))+
+  geom_line()+
+  scale_x_continuous(expand=c(0,5))+
+  labs(x="Year",y="Bottom Temperature (C)")+
+  theme(panel.border = element_rect(color='black',fill=NA),
+        axis.text = element_text(size=10),
+        axis.title = element_text(size=12))
+
+roms_oxy_ts_plot <- roms_bt_oxy_ts %>% 
+  filter(year>2019) %>%
+  # oxygen in ml/L or mmol/m3?
+  # ggplot(aes(year,oxy))+ # mmol/m3
+    ggplot(aes(year,oxy/44.66))+ # mL/L
+  geom_line()+
+  scale_x_continuous(expand=c(0,5))+
+  labs(x="Year",y="Bottom Oxygen (mL/L)")+
+  theme(panel.border = element_rect(color='black',fill=NA),
+        axis.text = element_text(size=10),
+        axis.title= element_text(size=12))
+
+bt_oxy_ts_plot <- plot_grid(roms_bt_ts_plot,roms_oxy_ts_plot,nrow=2)
+bt_oxy_ts_plot
+```
+
+# Distribution Maps
+
+```{r}
+dover_ens <- read_rds(here('model output','dts paper','dover_ensemble_preds_ipsl.rds'))
+sable_ens <- read_rds(here('model output','dts paper','sable_ensemble_preds_ipsl.rds'))
+ss_ens<-read_rds(here('model output','dts paper','ss_ensemble_preds_ipsl.rds'))
+ls_ens<-read_rds(here('model output','dts paper','ls_ensemble_preds_ipsl.rds'))
+```
+
+```{r}
+sable2021_whole_map <- map_year(sable_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)+
+  coord_sf(datum=NA)
+  # xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  # geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')
+```
+
+```{r,fig.height=7,fig.width=6}
+bbox2 <- bbox1+c(-100,-100,100,0)
+
+dover2021_map <- map_year(dover_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')
+  
+sable2021_map <- map_year(sable_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')
+ss2021_map <- map_year(ss_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')
+ls2021_map <- map_year(ls_ens,yr_vec=1980:2021,return_pred_df=F,plot_leg = F)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')
+
+plot_grid(dover2021_map,sable2021_map,ss2021_map,ls2021_map,nrow=2)
+```
+
+```{r,fig.height=7,fig.width=6}
+
+dover2100_diff <- make_comparison_map(dover_ens,yr = 2100)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')+
+  guides(fill='none')
+sable2100_diff <- make_comparison_map(sable_ens,yr = 2100)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')+
+  guides(fill='none')
+ss2100_diff <- make_comparison_map(ss_ens,yr = 2100)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')+
+  guides(fill='none')
+ls2100_diff <- make_comparison_map(ls_ens,yr = 2100)+
+  xlim(bbox2[1],bbox2[3])+ylim(bbox2[2],bbox2[4])+
+  geom_sf(data=ocnms,fill=NA,alpha=0.5,col='red')+
+  guides(fill='none')
+
+plot_grid(dover2100_diff,sable2100_diff,ss2100_diff,ls2100_diff,nrow=2)
+```
+
+# Center of Gravity
+
+```{r}
+dover_cog <- read_rds(here('model output','dts paper','dover_cog_ipsl.rds')) %>% mutate(spp="Dover Sole")
+sable_cog <- read_rds(here('model output','dts paper','sable_cog_ipsl.rds'))%>% mutate(spp="Sablefish")
+ss_cog <-read_rds(here('model output','dts paper','ss_cog_ipsl.rds'))%>% mutate(spp="Shortspine")
+ls_cog <-read_rds(here('model output','dts paper','ls_cog_ipsl.rds'))%>% mutate(spp="Longspine")
+
+cogs_all <- bind_rows(dover_cog,sable_cog,ss_cog,ls_cog)
+```
+
+```{r}
+cogs_2d_sf <- cogs_all %>% st_as_sf(coords=c('w.est_x','w.est_y'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+bbox_cog <- st_bbox(projection_extent)
+
+cog_spatial <- ggplot()+
+    geom_sf(data=coast)+
+    geom_sf(data=cogs_2d_sf,aes(col=year))+
+    labs(title="Center of Gravity",col="Year")+
+  facet_wrap(~spp,nrow=2)+
+    xlim(bbox_cog[1],bbox_cog[3])+ylim(bbox_cog[2],bbox_cog[4])
+cog_spatial
+```
+
+
