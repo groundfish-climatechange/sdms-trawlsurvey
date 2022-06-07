@@ -15,6 +15,7 @@ library(tidyverse)
 library(lubridate)
 library(sf)
 library(here)
+library(Hmisc)
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
 ```
@@ -454,6 +455,45 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
 }
 ```
 
+## Multispecies Map
+
+Map overlap between multiple species
+
+```{r}
+map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95){
+  df <- multi_ens %>% 
+    filter(year==yr) %>% 
+    # find quantiles for each species
+    group_by(species) %>% 
+    mutate(qlow=quantile(ens_est,qlower),qhigh=quantile(ens_est,qupper)) %>% 
+    mutate(presence=ifelse(ens_est>=qlow&ens_est<=qhigh,1,0)) %>% 
+    ungroup() %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(sumspp=sum(presence))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(sumspp=df$sumspp[nns])
+  
+  bbox=st_bbox(projection_extent)
+
+  out<-ggplot()+
+    # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+    # scale_color_viridis_c()+
+    geom_raster(data=gr_pred,aes(x=X,y=Y,fill=factor(sumspp)),interpolate=F)+
+    scale_fill_manual(values=rev(viridis_pal(option="C",begin=0.2,end=0.8)(5)))+
+    geom_sf(data=footprints,fill=NA,col='black')+
+    geom_sf(data=coast)+
+    coord_sf(datum=NA)+
+    xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+    labs(x="",y="",fill="# Species",title='')+
+    theme(legend.position=c(0.55,0.6))
+
+  out
+}
+```
+
+
 ## Difference Map
 
 Compare a map for a given year to the historical, 1980-2010 average.
@@ -625,14 +665,53 @@ plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2
   y %>% 
     ggplot(aes(depth,cum_cpue,col=factor(year)))+
     geom_line(size=2)+
-    # xlim(-2000,0)+
+    xlim(-1280,0)+
     # 700 fathom line
-    geom_vline(xintercept=-1280.16,linetype=2)+
+    # geom_vline(xintercept=-1280.16,linetype=2)+
     coord_flip()+
     scale_color_manual(values=c("#2271B2","#d55e00"))+
     labs(x="Depth (m)",y="Cumulative CPUE",title="",col="Year")
 }
 ```
+
+Option 2: Fraction of estimated CPUE that is deeper than 700 fathoms (~1280m)
+```{r}
+
+pal4 <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
+plot_depth_distribution2 <- function(ens_preds,start_year=2020,end_year=2100){
+  y <- ens_preds %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls_thornyhead" ~ "Longspine",
+      species=="ss_thornyhead"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+    filter(year>=start_year,year<=end_year) %>%
+    mutate(cpue=exp(ens_est)) %>% 
+    rename(depth=depth_m) %>% 
+    group_by(spp_plotting,year,depth) %>% 
+    summarise(cpue=mean(cpue,na.rm=T)) %>% 
+    ungroup() %>% 
+    group_by(spp_plotting,year) %>% 
+    mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
+    ungroup() %>% 
+    mutate(is_deep=depth < -1280) %>% 
+    group_by(spp_plotting,year,is_deep) %>% 
+    summarise(prop=sum(prop_cpue)) %>%
+    ungroup()
+  y %>% 
+    filter(!is_deep) %>% 
+    ggplot(aes(year,prop,col=spp_plotting))+
+    geom_line(size=1.5)+
+    scale_color_manual(values=pal4)+
+    # scale_color_manual(values=c("#2271B2","#d55e00"))+
+    labs(x="Year",y="Proportion CPUE Shallower than\n700 fathoms",title="",col="Species")+
+    theme(axis.text.x=element_text(size=10),
+          axis.text.y=element_text(size=10))
+}
+```
+
 
 ## Distance from Shore
 
@@ -850,6 +929,90 @@ rasterize_affinities <- function(ens_preds,template_raster,return_what="plot"){
 
 }
 ```
+
+## Environmental Affinities Ellipses
+
+Find weighted mean and SD of species' temperature and oxygen tolerances
+
+```{r}
+
+# x <- dover_ens %>% filter(year %in% 1980:2022) %>% mutate(expest=exp(ens_est)) %>% arrange(expest) %>% mutate(cumest=cumsum(expest)) %>% mutate(obs=row_number(),)
+# just weighted mean/sd temperature and oxygen
+weighted_affinities <- function(ens_preds,yrs=c(1980:2022)){
+  ens_preds %>% 
+    filter(year %in% yrs) %>%
+    group_by(species) %>%
+    mutate(ens_est=exp(ens_est)) %>% 
+    summarise(w.t=wtd.mean(mean_bt_30d_ipsl,ens_est,normwt = T),
+              w.o=wtd.mean(mean_oxy_bottom_30d_ipsl,ens_est,normwt = T),
+              var.t=wtd.var(mean_bt_30d_ipsl,ens_est,normwt=T),
+              var.o=wtd.var(mean_oxy_bottom_30d_ipsl,ens_est,normwt=T),
+              sd.t=sqrt(var.t),
+              sd.o=sqrt(var.o),
+              t.q5=wtd.quantile(mean_bt_30d_ipsl,ens_est,probs=0.05,normwt = T),
+              t.q95=wtd.quantile(mean_bt_30d_ipsl,ens_est,probs=0.95,normwt = T),
+              o.q5=wtd.quantile(mean_oxy_bottom_30d_ipsl,ens_est,probs=0.05,normwt = T),
+              o.q95=wtd.quantile(mean_oxy_bottom_30d_ipsl,ens_est,probs=0.95,normwt = T)) %>% 
+    ungroup() %>% 
+    mutate(t.max=w.t+sd.t,t.min=w.t-sd.t,o.max=w.o+sd.o,o.min=w.o-sd.o)
+}
+# make the plotting df
+```
+
+```{r}
+# Using package concaveman
+# ens_preds =four_spp;yr_vec=1980:2022
+require(concaveman)
+
+make_spp_concave_hull <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=5,threshold=0.05){
+  df <- ens_preds %>% 
+    filter(year %in% yr_vec) %>%
+    mutate(ens_est=exp(ens_est)) %>%
+    filter(ens_est>=quantile(ens_est,threshold)) %>% 
+    ungroup() %>% 
+    dplyr::select(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+    as.matrix()
+    # st_as_sf(coords=c("mean_bt_30d_ipsl","mean_oxy_bottom_30d_ipsl"))
+  p <- df %>% 
+    concaveman(concavity = concavity) %>% 
+    as_tibble() %>% 
+    mutate(spp=sppname)
+  p
+}
+
+affinities_ellipses <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold=0.25,return_what='df'){
+  df <- ens_preds %>% 
+    filter(year %in% yr_vec) %>%
+    mutate(ens_est=exp(ens_est)) %>%
+    dplyr::select(species,year,ens_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+    group_by(species) %>% 
+    nest(data=c(year,ens_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl)) %>% 
+    mutate(p=map(data,make_spp_concave_hull,sppname=species,concavity=concavity,threshold=threshold)) %>% 
+    ungroup()
+  
+  ps <- do.call(rbind,df$p) %>% 
+    mutate(spp_plotting=case_when(
+      spp=='dover' ~ "Dover Sole",
+      spp=="ls_thornyhead" ~ "Longspine",
+      spp=="ss_thornyhead"~"Shortspine",
+      spp=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
+  
+  if(return_what=='plot'){
+    out <- ps %>%
+      ggplot(aes(V1,V2,col=spp_plotting))+
+      geom_polygon(fill=NA,size=1.5)+
+      scale_color_manual(values=pal4)+
+      # scale_fill_manual(values=pal4)+
+      labs(x="Bottom Temperature",y="Bottom Oxygen",col="Species")
+  } else{
+    out <- ps
+  }
+  out
+}
+```
+
 
 ## All Projection Plots
 

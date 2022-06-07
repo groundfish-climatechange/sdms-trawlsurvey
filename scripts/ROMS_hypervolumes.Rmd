@@ -1,0 +1,305 @@
+---
+title: "ROMS hypervolumes"
+author: "Owen Liu"
+date: '2022-05-26'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(hypervolume)
+library(terra)
+library(here)
+library(tictoc)
+library(viridis)
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=12,color="black"),
+        legend.text = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=12,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+```{r}
+#SDM projection extent, to mask the rasters
+proj_ext <- read_rds(here::here('data','cropped_domain_for_projected_sdms.rds')) %>% vect()
+```
+
+
+```{r}
+## NOTE: SEEING IF HYPERVOLUME CODE WILL RUN FASTER IF WE REPLACE SOME FUNCTIONS WITH TERRA INSTEAD OF RASTER:
+hypervolume_project <- function (hv, rasters, type = "probability", verbose = TRUE,...){
+  raster.values = data.frame(terra::values(rasters))
+  na.rows <- raster.values %>% rowid_to_column("idx") %>% filter(if_any(everything(),is.na)) %>% pull(idx)
+  if (type == "probability") {
+    projected.values <- hypervolume_estimate_probability(hv = hv, 
+                                                         points = raster.values, verbose = verbose, ...)
+  }
+  else if (type == "inclusion") {
+    projected.values = hypervolume_inclusion_test(hv, raster.values, 
+                                                  verbose = verbose, ...)
+  }
+  else {
+    stop("Unsupported 'type' argument")
+  }
+  
+  raster.out <- rasters[[1]]
+  if (length(attr(projected.values, "NAIdx")) > 0) {
+    terra::values(raster.out)[-na.rows] <- projected.values
+    terra::values(raster.out)[na.rows] <- NA
+  }
+  else {
+    terra::values(raster.out) <- projected.values
+  }
+  return(raster.out)
+}
+```
+
+
+# Purpose
+
+Using code modified from James Smith, calculate hypervolumes and novelty for the 3 ROMS-ESM models for bottom temperature and bottom oxygen in the California Current. For historical conditions, use 1980-2010 (ROMS hindcast period), then apply to 2011 - 2100
+
+First, we do some organizing of the data.
+
+# Organize ROMS data
+
+We need to organize the historical and projected ROMS data into data frames and rasters for fitting of hypervolumes
+
+Could do this with a masked projection area (e.g., trawl survey footprint)
+
+```{r}
+roms_fls <- list.files(here('data','hypervolumes','projection rasters'),full.names=T)
+
+# for each ESM type, make a raster stack for the appropriate years
+gfdl_bt_historical <- roms_fls %>% str_subset('gfdl_bt') %>% str_subset('.grd') %>% rast() %>% subset(1:31) %>% mask(proj_ext)
+ipsl_bt_historical <- roms_fls %>% str_subset('ipsl_bt') %>% str_subset('.grd') %>% rast() %>% subset(1:31)%>% mask(proj_ext)
+had_bt_historical <- roms_fls %>% str_subset('had_bt') %>% str_subset('.grd') %>% rast() %>% subset(1:31)%>% mask(proj_ext)
+gfdl_oxy_historical <- roms_fls %>% str_subset('gfdl_oxy') %>% str_subset('.grd') %>% rast() %>% subset(1:31)%>% mask(proj_ext)
+ipsl_oxy_historical <- roms_fls %>% str_subset('ipsl_oxy') %>% str_subset('.grd') %>% rast() %>% subset(1:31)%>% mask(proj_ext)
+had_oxy_historical <- roms_fls %>% str_subset('had_oxy') %>% str_subset('.grd') %>% rast() %>% subset(1:31)%>% mask(proj_ext)
+
+# for each ESM type, make a raster stack for the appropriate years
+gfdl_bt_future <- roms_fls %>% str_subset('gfdl_bt') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+ipsl_bt_future <- roms_fls %>% str_subset('ipsl_bt') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+had_bt_future <- roms_fls %>% str_subset('had_bt') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+gfdl_oxy_future <- roms_fls %>% str_subset('gfdl_oxy') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+ipsl_oxy_future <- roms_fls %>% str_subset('ipsl_oxy') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+had_oxy_future <- roms_fls %>% str_subset('had_oxy') %>% str_subset('.grd') %>% rast() %>% subset(32:121)%>% mask(proj_ext)
+
+latlon <- xyFromCell(rast(roms_fls[1]), 1:ncell(rast(roms_fls[1]))) %>% as_tibble() %>%
+  set_names(c('lon','lat'))
+```
+
+Re-cast rasters to dataframes
+
+```{r}
+recast_stack <- function(rs,varname){
+  # yrs=1979+(1:nlyr(rs))
+  out <- rs %>%
+    terra::values() %>% 
+    as_tibble(.name_repair = "unique") %>% 
+    pivot_longer(everything(),names_to = 'year',values_to = varname) %>% 
+    dplyr::select(2) #pull out the value variable
+    # mutate(year=rep(yrs,ncell(rs)))
+  out
+}
+
+historical_all <- map2(.x=list(gfdl_bt_historical,ipsl_bt_historical,had_bt_historical,
+                               gfdl_oxy_historical,ipsl_oxy_historical,had_oxy_historical),
+                       .y=c("gfdl_bt","ipsl_bt","had_bt","gfdl_oxy","ipsl_oxy","had_oxy"),
+                       recast_stack) %>% bind_cols() %>% 
+  # add year and lat/lons
+  mutate(year=rep(1980:2010,ncell(gfdl_bt_historical))) %>% 
+  mutate(lat=rep(latlon$lat,each=length(1980:2010)),
+         lon=rep(latlon$lon,each=length(1980:2010)))
+```
+
+Normalize values
+
+```{r}
+env_vars <- setdiff(names(historical_all),c("year","lat","lon"))
+
+means <- historical_all %>% 
+  summarise(across(all_of(env_vars),mean,na.rm=T)) #'global' values used to standardise all your data
+
+SDs <- historical_all %>% 
+  summarise(across(all_of(env_vars),sd,na.rm=T))
+
+hist_data_s <- historical_all %>% 
+  dplyr::select(all_of(env_vars)) %>% 
+  scale(center=means,scale=SDs) %>% as_tibble()
+
+# without NAs
+hist_data_s_complete <- hist_data_s %>% drop_na()
+```
+
+# Make Hypervolumes
+
+Make hypervolumes for each ESM for bottom temperature and bottom oxygen
+
+```{r}
+calc_hv <- function(df,esm,max_sample=1e5){
+  dfsub <- df %>% dplyr::select(contains(esm))
+  set.seed(123)
+  if(nrow(dfsub)>max_sample){
+    dfsub <- dfsub %>% slice_sample(n=max_sample)
+  }
+  tic("Calculated hypervolume.")
+  hv <- hypervolume(data=dfsub,method='svm')
+  toc()
+  return(hv)
+}
+
+gfdl_hv <- calc_hv(hist_data_s_complete,esm="gfdl")
+ipsl_hv <- calc_hv(hist_data_s_complete,esm='ipsl')
+had_hv <- calc_hv(hist_data_s_complete,esm='had')
+
+# gut checks- took 76 minutes to run this with the full data (~1m rows)
+# try with a subset?
+# 100k sample took 35s
+# 300k sample took 466s
+# maybe should consider 100k subset, but with replicates??
+```
+
+Pair plots of environmental niche; dark red = data subset; small red = random points inside hypervolume
+
+```{r}
+plot(ipsl_hv)
+plot(gfdl_hv)
+plot(had_hv)
+```
+
+
+# Calculate Novelty
+
+Using the hypervolumes created above, calculate novelty for future scenarios
+
+```{r}
+# library(future)
+# library(furrr)
+# future::plan(sequential)
+# future_rasters should be a stack of temperature and oxygen rasters that you want to calculate novelty for (here, 2011-2100)
+calc_novelty_ts <- function(hv,esm,future_bt,future_oxy){
+  # stack temperature and oxygen for each year
+  tic("Splitting rasters.")
+  yrslist <- map(2011:2100,function(y){
+    n=paste0('year',y)
+    ind=y-2010
+    rx=c(future_bt[[ind]],future_oxy[[ind]])
+    names(rx)=c('bt','oxy')
+    # scale using global means
+    rx$bt <- scale(rx[[1]],center=pull(means,paste0(esm,'_bt')),scale = pull(SDs,paste0(esm,'_bt')))
+    rx$oxy <- scale(rx[[2]],center=pull(means,paste0(esm,'_oxy')),scale = pull(SDs,paste0(esm,'_oxy')))
+    rx
+  })
+  toc()
+  tic("Running inclusion test on each year.")
+  # for each year, calculate inclusion of these future raster values in historical hypervolume
+  out <- map(yrslist,function(x){
+    hp <- hypervolume_project(hv, rasters=x,
+                                type="inclusion",
+                                fast.or.accurate="accurate")
+    excl <- sum(terra::values(hp)==0,na.rm = T)  #number of cells 'excluded';
+    excl_prop <- excl/sum(terra::values(hp)>=0,na.rm=T) #proportion of cells excluded;
+    return(list(excl=excl,prop=excl_prop,rast=hp))
+  })
+  toc()
+  return(out)
+}
+```
+
+```{r}
+# testing
+# future_bt=gfdl_bt_future
+# future_oxy=gfdl_oxy_future
+# esm='gfdl'
+# yrslist <- map(2011:2100,function(y){
+#     n=paste0('year',y)
+#     ind=y-2010
+#     rx=c(future_bt[[ind]],future_oxy[[ind]])
+#     names(rx)=c('bt','oxy')
+#     # scale using global means
+#     rx$bt <- scale(rx[[1]],center=pull(means,paste0(esm,'_bt')),scale = pull(SDs,paste0(esm,'_bt')))
+#     rx$oxy <- scale(rx[[2]],center=pull(means,paste0(esm,'_oxy')),scale = pull(SDs,paste0(esm,'_oxy')))
+#     rx
+#   })
+# 
+# xy <- values(yrslist[[1]]) %>% as_tibble() %>% slice_sample(n=10000)
+# xy %>% ggplot(aes(oxy,bt))+geom_point()
+# 
+# hp <- hypervolume_project(gfdl_hv, rasters=yrslist[[75]],
+#                                 type="inclusion",
+#                                 fast.or.accurate="accurate")
+# excl <- sum(terra::values(hp)==0,na.rm = T)  #number of cells 'excluded';
+# excl_prop <- excl/sum(terra::values(hp)>=0,na.rm=T) #proportion of cells excluded;
+# rm(excl,excl_prop,xy,future_bt,future_oxy,hp,esm)
+```
+
+
+```{r}
+gfdl_proj <- calc_novelty_ts(hv=gfdl_hv,esm='gfdl',future_bt = gfdl_bt_future,future_oxy = gfdl_oxy_future)
+ipsl_proj <- calc_novelty_ts(hv=ipsl_hv,esm='ipsl',future_bt = ipsl_bt_future,future_oxy = ipsl_oxy_future)
+had_proj <- calc_novelty_ts(hv=had_hv,esm='had',future_bt = had_bt_future,future_oxy = had_oxy_future)
+# benchmarking- this took about 3.5 minutes with the masked data
+```
+
+# Visualize
+
+```{r}
+inclusion_ts <- function(hvout,plot=F){
+  excl_ts <- tibble(yr=2011:2100,
+                    excl=purrr::map_dbl(hvout,function(x)pluck(x,'excl')),
+                    prop=purrr::map_dbl(hvout,function(x)pluck(x,'prop')))
+  
+  if(plot) {
+    out <- excl_ts %>% 
+      ggplot(aes(yr,prop))+
+      geom_line()+
+      labs(x="Year",y="Proportion Novel")
+  }
+  else{out<-excl_ts}
+
+  return(out)
+}
+
+library(animation)
+
+animate_ts <- function(hvout,fname){
+  r <- purrr::map(hvout,function(x)pluck(x,'rast')) %>%
+    reduce(c)
+  animation::saveGIF(terra::animate(r,main=as.character(2011:2100),n=1),movie.name =paste0(fname,'.gif'))
+}
+```
+Apply
+
+```{r}
+gfdl_ts <- inclusion_ts(gfdl_proj,plot=F) %>% mutate(esm='gfdl')
+ipsl_ts <- inclusion_ts(ipsl_proj,plot=F) %>% mutate(esm='ipsl')
+had_ts <- inclusion_ts(had_proj,plot=F) %>% mutate(esm='hadley')
+```
+# Save
+```{r}
+novelty_3ESMs <- bind_rows(gfdl_ts,ipsl_ts,had_ts) %>% 
+  ggplot(aes(yr,prop,col=esm))+
+  geom_line(size=1.5)+
+  ylim(0,0.6)+
+  labs(x="Year",y="Proportion Novel")
+
+novelty_3ESMs
+
+ggsave(here('plots','novelty_3ESMs.png'),novelty_3ESMs,w=7,h=4)
+#gifs
+
+animate_ts(gfdl_proj,fname=here::here('plots','gfdl_novelty'))
+animate_ts(ipsl_proj,fname=here::here('plots','ipsl_novelty'))
+animate_ts(had_proj,fname=here::here('plots','had_novelty'))
+```
+
+
+

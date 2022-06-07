@@ -21,6 +21,7 @@
 *.gdb
 *.nc
 *.adf
+*.gif
 
 ## spatial data
 *.dbf
@@ -33,6 +34,7 @@
 *.grd
 *.png
 *.tif
+*.cdf
 
 ## knitted html files that may have confidential data
 *.html

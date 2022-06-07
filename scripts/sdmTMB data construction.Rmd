@@ -1,5 +1,5 @@
 ---
-title: "Run sdmTMB"
+title: "Build Data for sdmTMB groundfish modelling"
 author: "Owen Liu"
 date: "6/8/2021"
 output:
@@ -385,14 +385,14 @@ footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp'
   mutate(port_name=case_when(
     port_group=="BGA" ~ "Fort Bragg",
     port_group=="CBA" ~ "Coos Bay",
-    port_group=="CLO" ~ "Columbia River",
+    port_group=="CLO" ~ "Astoria",
     port_group=="ERA" ~ "Eureka",
     port_group=="MRA" ~ "Morro Bay",
     port_group=="NPS" ~ "North Puget Sound",
   )) %>% 
-  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Columbia River","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
+  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Astoria","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
 
-port_match <- tibble(port_name=c("Fort Bragg","Coos Bay","Columbia River","Eureka","Morro Bay","North Puget Sound")) %>% 
+port_match <- tibble(port_name=c("Fort Bragg","Coos Bay","Astoria","Eureka","Morro Bay","North Puget Sound")) %>% 
   mutate(port_code=c("BRG","COS","AST","ERK","MRO","ANA"))
 
 port_coords <- read_csv(here('data','port_coords.csv'),show_col_types = F) %>% 
@@ -400,7 +400,7 @@ port_coords <- read_csv(here('data','port_coords.csv'),show_col_types = F) %>%
   st_transform(st_crs(projection_extent)) %>% 
   left_join(port_match) %>% 
   filter(port_name%in% unique(footprints$port_name)) %>% 
-  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Columbia River","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
+  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Astoria","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
 rm(port_match)
 ```
 

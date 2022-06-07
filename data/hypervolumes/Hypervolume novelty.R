@@ -1,0 +1,117 @@
+##---------------------------------------------------------------##
+##----  Quantifying novel space in the environmental niche   ----##
+##----  ... with implications for SDM projection and ...     ----##
+##----  ... emerging climate impacts                         ----##
+##----  Example Version                                      ----##
+##----  J.A.Smith - UCSC/NOAA - Dec 2021 (R v4.1.0)          ----##
+##---------------------------------------------------------------##
+
+## Notes on hypervolume package:
+## - Best to center and scale all variables; this requires a global mean and SD...
+## ... I calculate these from my historical reference set (for each ESM) and use them for all future data.
+## - For trajectories of future novelty, I use an 'inclusion test', which requires...
+## ... a data.frame to build the historical hypervolume (in an SDM context, your observations), and...
+## ... rasters for your future period (in an SDM context, your prediction data).
+## - Hypervolumes are computationally intense, and more than 6 climate variables and ~300K observations...
+## ... is asking for trouble re: fitting. For me, this meant subsetting 5% of my 30y historical...
+## ... data at the native ROMS resolution (using monthly means).
+## - There are a couple of algorithms to delineate the hypervolume, but I prefer support vector machine...
+## ... mainly because it fits around the around the data very closely, and indicates...
+## ... whether future data are 'inside or outside' historical (rather than a probability).
+
+## *** MAKE SURE YOU DO ONE ESM/MODEL AT A TIME - the means and SDs are specific to each historical data set...
+## ... and these will change if the historical data set changes
+
+## "Historical" and "Future" are the relevant terms for measuring climate envelope novelty, but can be exchanged...
+## with "Observations" and "Predictions" when measuring SDM extrapolation
+
+
+library(hypervolume)
+library(raster)
+
+
+## Identify the environmental variables which define your climate/model niche 
+## --------------------------------------------------------------------------
+## ... for SDMs, what you fit the SDM to; excluding space-time variables
+## ... these must be headers in your data files AND your future raster stack MUST BE IN THE SAME ORDER
+## You can also add lat and lon here, which then measures novel locations (important for some SDMs)...
+## ... and novel conditions at locations (i.e. a novely warm SST for the PNW)
+
+env_vars <- c("sst","ild","oxygen")
+
+
+## Load and scale the 'historical' data (observations)
+## ---------------------------------------------------
+
+hist_data <- readRDS("hist_data_example.rds")  #an example subset from IPSL 1980-2009
+
+means <- colMeans(hist_data)[env_vars]  #'global' values used to standardise all your data
+SDs <- apply(hist_data, 2, sd)[env_vars]
+
+hist_data_s <- scale(hist_data[,env_vars], center=means, scale=SDs)  #center and scale
+hist_data_s <- as.data.frame(hist_data_s)
+
+
+## Subset data *only if required*
+## -----------------------
+## ...subset so you have < 300K observations; but trial this so your hypervolume fits in ~30 mins
+
+set.seed(123)
+prop <- 0.5  
+rowsx <- sample(1:nrow(hist_data_s), prop*nrow(hist_data_s), replace=FALSE)
+hist_data_s <- hist_data_s[rowsx,]
+head(hist_data_s)
+
+
+## Build historical hypervolume
+## ----------------------------
+## ... should take 5-60 mins for large data
+
+hvh = hypervolume(data=hist_data_s,
+                  method='svm')  #there are a couple of options in here, but I've found the defaults fine
+
+# summary(hvh)  #some generic info
+# get_volume(hvh)
+# get_centroid(hvh)
+plot(hvh, show.3d=F)  #pair plots of environmental niche; dark red = data subset; small red = random points inside hypervolume
+
+
+## Create/load future rasters and standardise
+## ----------------------------------------------
+
+r_sst <- raster("sst_ipsl_7_2080.grd")  #example month: July 2080 IPSL
+r_ild <- raster("ild_ipsl_7_2080.grd")
+r_oxygen <- raster("oxygen_ipsl_7_2080.grd")
+
+rx <- stack(r_sst,
+            r_ild,
+            r_oxygen)
+names(rx) <- c("sst","ild","oxygen")  #*MUST match 'env_vars' (same order as fitted hypervolume)
+
+rx$sst <- scale(rx$sst, center=means["sst"], scale=SDs["sst"])  #center and scale using global values
+rx$ild <- scale(rx$ild, center=means["ild"], scale=SDs["ild"])
+rx$oxygen <- scale(rx$oxygen, center=means["oxygen"], scale=SDs["oxygen"])
+
+
+## Calculate inclusion of these future raster values in historical hypervolume
+## --------------------------------------------------------------------
+
+hyp_proj <- hypervolume_project(hvh, rasters=rx,
+                                type="inclusion",
+                                fast.or.accurate="accurate")
+
+excl <- length(hyp_proj[hyp_proj==0])  #number of cells 'excluded'; in example ~3000 cells
+excl_prop <- length(hyp_proj[hyp_proj==0])/length(hyp_proj[hyp_proj>=0])  #proportion of cells excluded; in example ~14%
+
+# *** ^ save this proportion for this time step, this is what is plotted against time...
+# ... i.e. the proportion of the pixels (i.e. area) that are novel (excluded from the hypervolume) through time...
+# ... I have the 'load future rasters and inclusion test' steps inside a loop, and save 'excl_prop' inside...
+# ... a data.frame for each time step
+
+plot(hyp_proj, asp=1)  #this is the inclusion raster; green = included (analog conditions), white = excluded (novel conditions)
+
+# *** ^ I also save each time step's raster (hyp_proj) for later visualisation
+
+
+## END ------------------------------------------------------------------
+
