@@ -34,7 +34,7 @@ rmarkdown::render(here::here('scripts','sdmTMB data construction.Rmd'),quiet=TRU
 
 ## Prepare Species' Data
 
-This function selects a species' data from the trawl survey data, converts the spatial data to UTM, does a couple of filters for missing data, and then joins the ROMS hindcast data to it by time and location.
+This function selects a species' data from the trawl survey data, normalizes/scales the environmental data
 
 ```{r}
 prepare_species <- function(dat,spp){
