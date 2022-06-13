@@ -54,7 +54,7 @@ prepare_species <- function(dat,spp){
 Write a function that runs sdmTMB to fit a single model. It will call the previous `prepare_species` function to make the appropriate species data. For now, the environmental variable names are not generic (always `mean_temp_roms_30_norm` and `mean_oxygen_roms_30_norm` for fitting to the ROMS data).
 
 ```{r}
-run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3){
+run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -83,7 +83,7 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=
                    enviro)
   # if depth effect, add to model formla
   if(use_depth) {
-    formula = paste0(formula, " + depth + I(depth^2)")
+    formula = paste0(formula, " + depth_trawl_norm + I(depth_trawl_norm^2)")
   }
   
   time_formula = "~ -1"
@@ -107,16 +107,14 @@ run_sdmTMB <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=
   m <- try( sdmTMB(
     formula = as.formula(formula),
     time_varying = time_varying,
-    spde = spde,
+    mesh = spde,
     time = time,
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = FALSE,
-    spatial_only = T,
+    spatial = spatial_field,
     #extra_time argument necessary for prediction?
-    extra_time=1980:2100,
-    control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
-  ),
+    extra_time=1980:2100),
   silent=F)
 
 
