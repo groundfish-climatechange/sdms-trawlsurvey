@@ -31,7 +31,7 @@ knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
 ```
 
-```{r}
+```{r plottheme}
 # ggplot theme
 plot_theme <-   theme_minimal()+
   theme(text=element_text(family="sans",size=10,color="black"),
