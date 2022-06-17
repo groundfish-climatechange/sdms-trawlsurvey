@@ -202,15 +202,15 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
     parallel = TRUE,
     fold_ids = modeldat$fold,
     time_varying = time_varying,
-    spde = spde,
+    mesh = spde,
     time = time,
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = FALSE,
-    spatial_only = T,
+    spatial_only = spatial_field
     #extra_time argument necessary for prediction?
     # extra_time=1980:2100,
-    control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
+    # control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
   ),
   silent=T)
   if(class(m_cv)=='try-error'){
@@ -458,7 +458,7 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
 Map overlap between multiple species
 
 ```{r}
-map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95){
+map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95,show_footprints=F,show_bathy=T){
   df <- multi_ens %>% 
     filter(year==yr) %>% 
     # find quantiles for each species
@@ -480,14 +480,16 @@ map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95){
     # scale_color_viridis_c()+
     geom_raster(data=gr_pred,aes(x=X,y=Y,fill=factor(sumspp)),interpolate=F)+
     scale_fill_manual(values=rev(viridis_pal(option="C",begin=0.2,end=0.8)(5)))+
-    geom_sf(data=footprints,fill=NA,col='black')+
+    # geom_sf(data=footprints,fill=NA,col='red')+
     geom_sf(data=coast)+
     coord_sf(datum=NA)+
     xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
     labs(x="",y="",fill="# Species",title='')+
     theme(legend.position=c(0.55,0.6))
 
-  out
+  if(show_footprints) out <- out + geom_sf(data=footprints,fill=NA,col='black')
+  if(show_bathy) out <- out + geom_sf(data=isobaths,col='gray30')
+  out+coord_sf(datum=NA)
 }
 ```
 
@@ -663,9 +665,9 @@ plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2
   y %>% 
     ggplot(aes(depth,cum_cpue,col=factor(year)))+
     geom_line(size=2)+
-    xlim(-1280,0)+
+    # xlim(-1280,0)+
     # 700 fathom line
-    # geom_vline(xintercept=-1280.16,linetype=2)+
+    geom_vline(xintercept=-1280.16,linetype=2)+
     coord_flip()+
     scale_color_manual(values=c("#2271B2","#d55e00"))+
     labs(x="Depth (m)",y="Cumulative CPUE",title="",col="Year")
@@ -704,7 +706,7 @@ plot_depth_distribution2 <- function(ens_preds,start_year=2020,end_year=2100){
     geom_line(size=1.5)+
     scale_color_manual(values=pal4)+
     # scale_color_manual(values=c("#2271B2","#d55e00"))+
-    labs(x="Year",y="Proportion CPUE Shallower than\n700 fathoms",title="",col="Species")+
+    labs(x="Year",y="Proportion < 700 fathoms",title="",col="Species")+
     theme(axis.text.x=element_text(size=10),
           axis.text.y=element_text(size=10))
 }
@@ -742,6 +744,59 @@ plot_dist_to_shore <- function(ens_preds,include_legend=T){
         scale_y_reverse(limits=c(90,20))+
         coord_flip()+
         labs(y="",x="",col="")
+  }
+
+  p
+}
+```
+
+```{r}
+# right now this works on a group of ensemble outputs
+plot_dist_to_shore_change <- function(multispp_df,include_legend=T){
+  d <- multispp_df %>%  
+    left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+    group_by(species,year,lat) %>% 
+    mutate(totest = sum(exp(ens_est))) %>% 
+    mutate(rel_est=exp(ens_est)/totest) %>% 
+    mutate(w.dist=rel_est*km_to_coast) %>% 
+    summarise(w.dist=sum(w.dist)) %>% 
+    ungroup() %>% 
+    group_by(species,lat) %>% 
+    mutate(change_from_2020=w.dist-w.dist[year==2020]) %>% 
+    ungroup() %>% 
+    filter(year==2100) %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls_thornyhead" ~ "Longspine",
+      species=="ss_thornyhead"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
+  
+  if(include_legend){
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
+        geom_line(size=1.2)+
+        geom_hline(yintercept=0,linetype=2)+
+        ylim(-6,25)+
+        scale_color_manual(values=pal4)+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        # theme(legend.position = c(0.8,0.7))+
+        labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
+  } else {
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
+        geom_line(size=1.2)+
+        geom_hline(yintercept=0,linetype=2)+
+        ylim(-6,25)+
+        scale_color_manual(values=pal4,guide='none')+
+        # scale_color_viridis(option="A",guide="none")+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        labs(y="Change in Distance from Shore (km)",x="Latitude")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
   }
 
   p
@@ -792,6 +847,114 @@ map_dist_to_shore <- function(ens_preds,include_legend=T){
         xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
         labs(y="",x="",col="Year")+
         theme(plot.margin = unit(c(0,0,0,0), "cm"))
+  }
+
+  p
+}
+```
+
+
+## Zonal CPUE Change
+
+Similar to the distance from shore calculation, this function displays the projected change in CPUE for each species, by latitude band.
+
+```{r}
+plot_mean_zonal_cpue_change <- function(multispp_df,include_legend=T){
+  d <- multispp_df %>%
+    # left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+    group_by(species,year,lat) %>% 
+    summarise(latmean=mean(exp(ens_est))) %>% 
+    mutate(log_latmean=log(latmean)) %>% 
+    ungroup() %>%
+    group_by(species,lat) %>% 
+    mutate(change_from_2020=log_latmean-log_latmean[year==2020]) %>% 
+    ungroup() %>% 
+    filter(year==2100) %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls_thornyhead" ~ "Longspine",
+      species=="ss_thornyhead"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
+  
+  if(include_legend){
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
+        geom_line(size=1.5)+
+        geom_hline(yintercept=0,linetype=2)+
+        # ylim(-6,25)+
+        scale_color_manual(values=pal4)+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        # theme(legend.position = c(0.8,0.7))+
+        labs(y="Change in Log CPUE",x="Latitude",col="Species")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
+  } else {
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
+        geom_line(size=1.5)+
+        geom_hline(yintercept=0,linetype=2)+
+        # ylim(-6,25)+
+        scale_color_manual(values=pal4,guide='none')+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        # theme(legend.position = c(0.8,0.7))+
+        labs(y="Change in Log CPUE",x="Latitude",col="Species")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
+  }
+
+  p
+}
+```
+
+```{r}
+# relative cpue change (change in the proportion of each species' distribution at each latitude)
+plot_rel_zonal_cpue_change <- function(multispp_df,include_legend=T){
+  d <- multispp_df %>%  
+    # left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+    group_by(species,year,lat) %>% 
+    summarise(lattot=sum(exp(ens_est))) %>% 
+    ungroup() %>% 
+    group_by(species,year) %>%
+    mutate(totest=sum(lattot),
+           proplat=lattot/totest) %>%
+    group_by(species,lat) %>% 
+    mutate(change_from_2020=proplat-proplat[year==2020]) %>% 
+    ungroup() %>% 
+    filter(year==2100) %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls_thornyhead" ~ "Longspine",
+      species=="ss_thornyhead"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
+  
+  if(include_legend){
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020*100,color=spp_plotting))+
+        geom_line(size=1.2)+
+        geom_hline(yintercept=0,linetype=2)+
+        # ylim(-6,25)+
+        scale_color_manual(values=pal4)+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        # theme(legend.position = c(0.8,0.7))+
+        labs(y="Change in % of CPUE",x="Latitude",col="Species")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
+  } else {
+      p <- d %>% 
+        ggplot(aes(lat,change_from_2020*100,color=spp_plotting))+
+        geom_line(size=1.2)+
+        geom_hline(yintercept=0,linetype=2)+
+        # ylim(-6,25)+
+        scale_color_manual(values=pal4,guide='none')+
+        # scale_color_viridis(option="A",guide="none")+
+        # scale_y_reverse(limits=c(90,20))+
+        coord_flip()+
+        labs(y="Change in % of CPUE",x="Latitude")+
+        theme(panel.background = element_rect(fill=NA,color='black'))
   }
 
   p
@@ -1195,7 +1358,7 @@ Calculate an ensemble CPUE density timeseries within particular port-based fishi
 calc_footprint_dens_ts <- function(ens_preds,fp=footprints,what="plot"){
   d <- ens_preds %>% 
     filter(year>2019) %>% 
-    mutate(est=ens_est) %>%
+    mutate(est=exp(ens_est)) %>%
     # mutate(est=exp(ens_est)) %>%
     st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
     st_join(footprints) %>% 
@@ -1203,10 +1366,11 @@ calc_footprint_dens_ts <- function(ens_preds,fp=footprints,what="plot"){
     filter(!is.na(port_name)) %>% 
     group_by(port_name,year) %>% 
     summarise(mean_cpue=mean(est,na.rm=T)) %>% 
-    ungroup()
+    ungroup() %>% 
+    mutate(mean_log_cpue=log(mean_cpue))
   if(what=="plot"){
     out <- d %>% 
-      ggplot(aes(year,mean_cpue,col=port_name))+
+      ggplot(aes(year,mean_log_cpue,col=port_name))+
       geom_line(size=1)+
       # geom_point(size=1)+
       # geom_smooth(se=F)+

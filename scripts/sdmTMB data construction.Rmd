@@ -13,6 +13,7 @@ output:
 ```{r setup, include=FALSE}
 # remotes::install_github("pbs-assess/sdmTMB",ref="stacking")
 library(sdmTMB)
+library(terra)
 library(raster)
 library(tidyverse)
 library(lubridate)
@@ -240,6 +241,45 @@ wc_grid$log_depth_scaled2 <- wc_grid$log_depth_scaled ^ 2
 ```
 
 ```{r,eval=F}
+# isobaths for mapping
+# 
+# bathy_hiRes_crop <- bathy_hiRes %>% rast() %>% 
+#   # decimeters to meters
+#   "*"(.1)
+# isobaths <- as.contour(bathy_hiRes_crop,levels=c(-1300)) %>% 
+#   st_as_sf() %>% 
+#   st_transform(st_crs(coast))
+
+# compare to newly-acquired data from Office of Coastal Management
+# isobaths2 <- read_sf(here('data','grids','ocm_bathy','west_coast_bath_contours_geo.shp')) %>% 
+#   st_transform(st_crs(isobaths)) %>% 
+#   filter(ISOBATH_M %in% c(-1300,-200))
+
+# bathybbox <- st_bbox(isobaths)
+# ggplot()+geom_sf(data=coast,fill='gray90')+
+#   geom_sf(data=isobaths,col='black')+
+#   # geom_sf(data=isobaths2,col='red')+
+#   coord_sf(xlim=c(bathybbox[1],bathybbox[3]),ylim=c(bathybbox[2],bathybbox[4]))+
+#   labs(col="Depth (m)")
+# 
+# ggplot()+geom_sf(data=coast,fill='gray90')+
+#   # geom_sf(data=isobaths,col='black')+
+#   geom_sf(data=isobaths2,col='red')+
+#   coord_sf(xlim=c(bathybbox[1],bathybbox[3]),ylim=c(bathybbox[2],bathybbox[4]))+
+#   labs(col="Depth (m)")
+
+# why does this look SO off?
+# try extracting? maybe a units mismatch
+# isobath_1300 <- isobaths2 %>% filter(ISOBATH_M==-1300) %>% st_transform(4326)
+# isobath_extract <- terra::extract(rast(bathy_hiRes),vect(isobath_1300)) %>% 
+#   drop_na()
+# isobath_extract %>% ggplot(aes(bathy_clipped))+geom_density()
+# oh god, I think the original bathymetry was in decimenters
+```
+
+
+```{r,eval=F}
+readr::write_rds(x = isobaths, file=here('data','grids',"isobaths200_1300.rds"))
 readr::write_rds(x = wc_grid, file=here('data','grids',"wc_grid.rds"))
 ```
 
@@ -360,6 +400,13 @@ projection_extent <- read_rds(here::here('data','cropped_domain_for_projected_sd
 ```
 
 ```{r}
+isobaths <- read_sf(here('data','grids','ocm_bathy','west_coast_bath_contours_geo.shp')) %>% 
+  st_transform(st_crs(coast)) %>% 
+  filter(ISOBATH_M %in% c(-1300,-200))
+```
+
+
+```{r}
 roms_dist_to_coast <- read_rds(here::here('data','roms_distance_to_shore.rds'))
 ```
 
@@ -406,7 +453,7 @@ rm(port_match)
 
 ## DTS Landings and Value
 
-```{r, eval=F}
+```{r}
 v <- read_csv(here('data','dts_landings.csv'),show_col_types = F) %>% 
   rename(name=`NMFS Name`) %>% 
   mutate(Year=as.integer(Year)) %>% 

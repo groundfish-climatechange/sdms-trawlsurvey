@@ -44,6 +44,7 @@ plot_theme <-   theme_minimal()+
 theme_set(plot_theme)
 pal <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
 pal6 <- viridis_pal(option="C",begin=0.2,end=0.8)(6)
+pal6_2 <- viridis_pal(option="B",begin=0.2,end=0.8)(6)
 
 ```
 
@@ -94,6 +95,7 @@ bbox1 <- st_bbox(projection_extent)
 study_area <- ggplot()+
   geom_sf(data=coast,fill='gray80')+
   geom_sf(data=projection_extent,fill='blue',alpha=0.5,col=NA)+
+  geom_sf(data=isobaths,col='black')+
   coord_sf(datum=NA)+
   xlim(bbox1[1],bbox1[3])+ylim(bbox1[2],bbox1[4])
 # study_area
@@ -226,6 +228,33 @@ ss_cog <-read_rds(here('model output','dts paper','ss_cog_ipsl.rds'))
 ls_cog <-read_rds(here('model output','dts paper','ls_cog_ipsl.rds'))
 ```
 
+```{r}
+# COG figure combined
+cog_all <- dover_cog %>% mutate(species="Dover") %>% 
+  bind_rows(sable_cog %>% mutate(species="Sablefish")) %>% 
+  bind_rows(ss_cog %>% mutate(species="Shortspine")) %>% 
+  bind_rows(ls_cog %>% mutate(species="Longspine")) %>% 
+  mutate(species=factor(species,levels=c("Dover","Sablefish","Shortspine","Longspine")))
+
+fourspp_cogx_plot <- cog_all %>% 
+  filter(year>2019) %>% 
+  ggplot(aes(year,w.est_x,color=species))+
+  geom_line(size=1.5)+
+  scale_color_manual(values=pal4,guide='none')+
+  labs(x="Year",y="Eastings (km)")+
+  theme(panel.background=element_rect(fill=NA,color='black'))
+fourspp_cogy_plot <- cog_all %>% 
+  filter(year>2019) %>% 
+  ggplot(aes(year,w.est_y,color=species))+
+  geom_line(size=1.5)+
+  scale_color_manual(values=pal4)+
+  labs(x="Year",y="Northings (km)")+
+  theme(panel.background=element_rect(fill=NA,color='black'))
+fourspp_cog_plot <- plot_grid(fourspp_cogx_plot,fourspp_cogy_plot,labels='auto',nrow=1,rel_widths = c(0.7,1))
+ggsave(here('model output','dts paper','four_spp_cog_plot.png'),fourspp_cog_plot,h=6,w=8)
+```
+
+
 # Environmental Affinities
 
 ```{r}
@@ -236,7 +265,7 @@ four_spp <- dover_ens %>% rename(dover=ens_est) %>%
   left_join(ls_ens %>% rename(ls_thornyhead=ens_est),by = c("year", "longitude", "latitude", "lat", "lon", "depth_m")) %>% 
   # join roms data
   left_join(roms,by = c("year", "longitude", "latitude", "lat", "lon")) %>% 
-  dplyr::select(year,dover:ls_thornyhead,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,depth_m,longitude,latitude) %>%
+  dplyr::select(year,dover:ls_thornyhead,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,depth_m,lat,lon,longitude,latitude) %>%
   pivot_longer(dover:ls_thornyhead,names_to="species",values_to="ens_est")
 ```
 
@@ -268,18 +297,20 @@ roms_env_space <- roms %>%
 bbox=st_bbox(projection_extent)
 footprints_map <- ggplot()+
   geom_sf(data=footprints,aes(fill=port_name),alpha=0.5)+
-  geom_sf(data=coast,fill='gray60')+
+  geom_sf(data=coast,fill='gray80')+
+  # geom_sf(data=isobaths,col='gray20')+
   geom_sf(data=port_coords,aes(color=port_name),size=3)+
   scale_fill_npg()+
   scale_color_npg()+
-  guides(color='none',fill='none')+
+  guides(color='none')+
   # guides(color="none",fill='none')+
   coord_sf(datum=NA)+
   labs(fill="Port")+
   xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
   theme(
         legend.text=element_text(size=8),
-        legend.background = element_rect(fill='white',color='black'))
+        legend.background = element_rect(fill='white',color='black'),
+        legend.position=c(0.6,0.6))
 footprints_map
 ```
 
@@ -373,7 +404,6 @@ roms_env_space_plot_facets <- roms_env_space %>%
 roms_env_space_plot_facets
 # with no facetting
 
-
 bookend_env <- roms_env_space %>% 
   drop_na() %>% 
   filter(year %in% c(2020,2100))
@@ -391,7 +421,7 @@ roms_env_space_plot <- ggplot()+
                aes(x=mean_t_2020,y=mean_oxy_2020,xend=mean_t_2100,yend=mean_oxy_2100,
                    col=port_name),
                size=1.5,
-               arrow=arrow(type="closed",length=unit(0.15,'inches')))+
+               arrow=ggplot2::arrow(type="closed",length=unit(0.15,'inches')))+
   scale_color_manual(values=pal_npg()(6))+
   scale_shape_manual(values=c("2020"=16,"2100"=23))+
   # scale_shape_manual(values=c(1,16))+
@@ -403,7 +433,7 @@ roms_env_space_plot <- ggplot()+
         legend.position = c(0.3,0.85),
         legend.direction = 'horizontal',
         legend.background = element_rect(color='black'))
-# roms_env_space_plot
+roms_env_space_plot
 ```
 
 ## Affinities (Mean + SD)
@@ -448,14 +478,14 @@ env_space_plots
 
 ```{r}
 library(ggnewscale)
-aff_polys<-affinities_ellipses(four_spp,yr_vec=1980:2022,concavity=7,threshold=0.25)
+aff_polys<-affinities_ellipses(four_spp,yr_vec=1980:2020,concavity=7,threshold=0.25)
 # plotting order for colors
 polys_and_footprints <- ggplot()+
   geom_polygon(data=aff_polys,aes(V1,V2,col=spp_plotting),fill=NA,size=1,linetype=3)+
-  scale_color_manual(values=c(pal4),name="75th quantile\nSpecies presence")+
+  scale_color_manual(values=c(pal4),name="Top 75% of\nspecies' CPUE")+
   new_scale_color()+
   geom_segment(data=footprint_env_space,aes(x=mean_t_2020,y=mean_oxy_2020,xend=mean_t_2100,yend=mean_oxy_2100,
-             col=port_name),size=1,linetype=1,arrow=arrow(type="open",length=unit(0.1,'inches')))+
+             col=port_name),size=1,linetype=1,arrow=ggplot2::arrow(type="open",length=unit(0.1,'inches')))+
   scale_color_npg(name="Port Group\nClimate")+
   labs(x="Bottom Temperature (deg C)",y="Bottom Oxygen (mmol/m3)")+
   theme(panel.grid.major = element_blank(),
@@ -487,7 +517,7 @@ fig2 <- plot_grid(footprint_db_temp_plot2,footprint_db_oxy_plot2,polys_and_footp
                   hjust = 0,vjust=1,
                   rel_heights = c(0.2,0.2,0.6))
 fig2
-ggsave(here('model output','dts paper','fishing_footprint_dumbbells_spp_affs.png'),fig2,h=8,w=8)
+ggsave(here('model output','dts paper','fig2.png'),fig2,h=8,w=8)
 ```
 
 
@@ -516,8 +546,9 @@ ggsave(here('model output','dts paper','four species affinities.png'),four_spp_a
 # Depth Change
 
 ```{r}
-fourspp_depth <- plot_depth_distribution2(four_spp,start_year = 2020,end_year=2100)
+fourspp_depth <- plot_depth_distribution2(four_spp,start_year = 2020,end_year=2100)+theme(panel.background = element_rect(fill=NA,color='black'))+theme(legend.position = 'bottom')
 fourspp_depth
+ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth,w=6,h=4)
 ```
 
 
@@ -531,10 +562,10 @@ four_spp_depths <- plot_grid(doverdepth,sabledepth,ssdepth,lsdepth,nrow=2,labels
 # add fishy icons
 plt <- ggdraw()+
   draw_plot(four_spp_depths)+
-  draw_image(here('data','icons','dover1.jpg'),hjust=.24,vjust=-.4,scale=0.15)+
-  draw_image(here('data','icons','sablefish.png'),hjust=-.26,vjust=-.4,scale=0.15)+
-  draw_image(here('data','icons','shortspine.png'),hjust=.24,vjust=.15,scale=0.15)+
-  draw_image(here('data','icons','longspine1.jpg'),hjust=-.26,vjust=.15,scale=0.15)
+  draw_image(here('data','icons','dover1.jpg'),hjust=.27,vjust=-.2,scale=0.15)+
+  draw_image(here('data','icons','sablefish.png'),hjust=-.26,vjust=-.2,scale=0.15)+
+  draw_image(here('data','icons','shortspine.png'),hjust=.24,vjust=.3,scale=0.15)+
+  draw_image(here('data','icons','longspine1.jpg'),hjust=-.26,vjust=.3,scale=0.15)
 plt
 
 ggsave(here('model output','dts paper','four species depth distribution.png'),plt,w=8,h=8)
@@ -543,24 +574,46 @@ ggsave(here('model output','dts paper','four species depth distribution.png'),pl
 # Distance from Shore
 
 Weighted distance from shore
+```{r}
+four_spp_dist <- plot_dist_to_shore_change(four_spp,include_legend = F)
+four_spp_dist
+ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist,w=6,h=6)
+```
+
+With depth plot as well
+
+```{r,fig.width=7,fig.height=5}
+leg <- get_legend(fourspp_depth)
+fig_dist_depth_change<-plot_grid(four_spp_dist+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
+                                 fourspp_depth+guides(color='none')+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
+                                 nrow=1,labels='auto')
+fig_dist_depth_change<-ggdraw()+
+  draw_plot(fig_dist_depth_change)+
+  draw_plot(leg,y=-0.45)
+# fig_dist_depth_change<-plot_grid(four_spp_dist,fourspp_depth+guides(color='none'),NULL,NULL,leg,NULL,nrow=3,rel_heights=c(1,-0.2,0.5),labels=c('a','b','','','',''))
+
+ggsave(here('model output','dts paper','fig_dist_depth_change.png'),fig_dist_depth_change,w=8,h=5)
+```
+
+
 
 ```{r,fig.width=8,fig.height=6}
-dover_dist <- plot_dist_to_shore(dover_ens,include_legend = F)
-sable_dist <- plot_dist_to_shore(sable_ens,include_legend = F)
-ss_dist <- plot_dist_to_shore(ss_ens,include_legend = F)
-ls_dist <- plot_dist_to_shore(ls_ens,include_legend = F)
-
-ylab <- text_grob("Latitude",rot=90)
-xlab <- text_grob("Centroid Distance from Shore (km)",vjust = -2)
-distleg <- dover_ens %>% plot_dist_to_shore(include_legend=T) %>% ggpubr::get_legend()
-
-
-four_spp_dist <- plot_grid(ylab,dover_dist,sable_dist,NULL,ss_dist,ls_dist,distleg,NULL,NULL,NULL,xlab,NULL,NULL,NULL,ncol=7,
-                           labels=c("",'a',"b","","c","d",""),
-                           rel_widths = c(0.1,1,1,0.1,1,1,0.5),
-                           rel_heights = c(1,0.1))
-four_spp_dist
-ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist,w=8,h=6)
+# dover_dist <- plot_dist_to_shore_change(dover_ens,include_legend = F)
+# sable_dist <- plot_dist_to_shore_change(sable_ens,include_legend = F)
+# ss_dist <- plot_dist_to_shore_change(ss_ens,include_legend = F)
+# ls_dist <- plot_dist_to_shore_change(ls_ens,include_legend = F)
+# 
+# ylab <- text_grob("Latitude",rot=90)
+# xlab <- text_grob("Change in Distance from Shore (km)",vjust = -2)
+# distleg <- dover_ens %>% plot_dist_to_shore_change(include_legend=T) %>% ggpubr::get_legend()
+# 
+# 
+# four_spp_dist <- plot_grid(ylab,dover_dist,sable_dist,NULL,ss_dist,ls_dist,distleg,NULL,NULL,NULL,xlab,NULL,NULL,NULL,ncol=7,
+#                            labels=c("",'a',"b","","c","d",""),
+#                            rel_widths = c(0.1,1,1,0.1,1,1,0.5),
+#                            rel_heights = c(1,0.1))
+# four_spp_dist
+# ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist,w=8,h=6)
 ```
 
 ```{r,fig.width=8,fig.height=6}
@@ -580,6 +633,19 @@ four_spp_distmap <- plot_grid(ylab,dover_distmap,sable_distmap,NULL,ss_distmap,l
                            rel_heights = c(1,0.05))
 four_spp_distmap
 ggsave(here('model output','dts paper','four species distance from shore map.png'),four_spp_distmap,w=8,h=6)
+```
+
+# Zonal CPUE Change
+
+```{r}
+zonal_cpue_change <- plot_mean_zonal_cpue_change(four_spp)
+zonal_rel_cpue_change <- plot_rel_zonal_cpue_change(four_spp)
+zonal_cpue_change
+zonal_rel_cpue_change
+
+ggsave(here('model output','dts paper','zonal_mean_cpue_change.png'),zonal_cpue_change,w=6,h=6)
+ggsave(here('model output','dts paper','zonal_rel_cpue_change.png'),zonal_rel_cpue_change,w=6,h=6)
+
 ```
 
 # Hovmoller Plots
@@ -627,7 +693,8 @@ Overlap map (count number of species in each cell). This figure shows the number
 # include footprints
 multimap2020 <- map_multispp_year(four_spp,yr=2020,qlower=0.75,qupper=1)+guides(fill='none')
 multimap2100 <- map_multispp_year(four_spp,yr=2100,qlower=0.75,qupper=1)
-partb <- plot_grid(multimap2020,NULL,multimap2100,rel_widths = c(1,-0.65,1),nrow=1)
+partb <- plot_grid(multimap2020,NULL,multimap2100,rel_widths = c(1,-0.65,1),nrow=1,labels=c('2020','','2100'),
+                  hjust=-2,vjust=2)
 row2 <- plot_grid(footprints_map,partb,labels=c('b','c'),nrow=1,rel_widths = c(0.8,1))
 multimapcomp <- plot_grid(landings_plot,row2,nrow=2,rel_heights = c(0.3,0.7),labels='auto')
 
@@ -637,7 +704,32 @@ multimap2100
 ggsave(here('model output','dts paper','footprint_spp_presence_rast_2020.png'),multimap2020,w=6,h=8)
 ggsave(here('model output','dts paper','footprint_spp_presence_rast_2100.png'),multimap2100,w=6,h=8)
 
-ggsave(here('model output','dts paper','fig1.png'),w=6,h=8)
+ggsave(here('model output','dts paper','fig1.png'),multimapcomp,w=6,h=8)
+```
+```{r}
+# count cells
+x <- four_spp %>% 
+     filter(year==2020) %>% 
+     # find quantiles for each species
+     group_by(species) %>% 
+     mutate(qlow=quantile(ens_est,0.75),qhigh=quantile(ens_est,1)) %>% 
+     mutate(presence=ifelse(ens_est>=qlow&ens_est<=qhigh,1,0)) %>% 
+     ungroup() %>% 
+     group_by(longitude,latitude) %>% 
+     summarise(sumspp=sum(presence))
+
+y <- four_spp %>% 
+     filter(year==2100) %>% 
+     # find quantiles for each species
+     group_by(species) %>% 
+     mutate(qlow=quantile(ens_est,0.75),qhigh=quantile(ens_est,1)) %>% 
+     mutate(presence=ifelse(ens_est>=qlow&ens_est<=qhigh,1,0)) %>% 
+     ungroup() %>% 
+     group_by(longitude,latitude) %>% 
+     summarise(sumspp=sum(presence))
+
+x %>% ggplot(aes(sumspp))+geom_histogram(bins=5)+labs(x="Number of Overlapping Species",y="Count",title="2020")
+y %>% ggplot(aes(sumspp))+geom_histogram(bins=5)+labs(x="Number of Overlapping Species",y="Count",title="2100")
 ```
 
 
@@ -713,7 +805,8 @@ lic_plot <- ens_est_overlaps %>%
   scale_color_manual(values=viridis_pal(option="A",begin=0.2,end=0.8)(6),
                      guide=guide_legend(override.aes = list(size=2)))+
   theme(legend.background = element_rect(color='black'),
-        legend.text = element_text(size=12))+
+        legend.text = element_text(size=12),
+        panel.background=element_rect(fill=NA,color='black'))+
   labs(x="Year",y="Local Index of Collocation",color="Species Pair")
 lic_plot
 ggsave(here('model output','dts paper','four species LIC.png'),lic_plot,w=8,h=6)
@@ -775,7 +868,8 @@ gic_plot <- ens_est_overlaps %>%
   scale_color_manual(values=viridis_pal(option="A",begin=0.2,end=0.8)(6),
                      guide=guide_legend(override.aes = list(size=2)))+
   scale_y_continuous(limits = c(0.8,1))+
-  theme(legend.background = element_rect(color='black'))+
+  theme(legend.background = element_rect(color='black'),
+        panel.background=element_rect(fill=NA,color='black'))+
   labs(x="Year",y="Global Index of Collocation",color="Species Pair")
 gic_plot
 
@@ -802,7 +896,8 @@ D_plot <- ens_est_overlaps %>%
   scale_y_continuous(limits=c(NA,1))+
   scale_color_manual(values=viridis_pal(option="A",begin=0.2,end=0.8)(6),
                      guide=guide_legend(override.aes = list(size=2)))+
-  theme(legend.background = element_rect(color='black'))+
+  theme(legend.background = element_rect(color='black'),
+        panel.background=element_rect(fill=NA,color='black'))+
   labs(x="Year",y="Schoener's D",color="Species Pair")
 
 D_plot
@@ -843,7 +938,7 @@ footprint_ts <- purrr::map2_df(list(dover_ens,sable_ens,ss_ens,ls_ens),c("Dover 
 
 pal4 <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
 footprint_ts_plot <- footprint_ts %>% 
-  ggplot(aes(year,mean_cpue,col=species))+
+  ggplot(aes(year,mean_log_cpue,col=species))+
   geom_line(size=1)+
   labs(x="Year",y="Log CPUE (kg per sq. km)",color="Species")+
   scale_color_manual(values=pal4)+
@@ -851,7 +946,9 @@ footprint_ts_plot <- footprint_ts %>%
   facet_wrap(~port_name,ncol=1,scales='free_y')+
   theme(legend.position = "left",
         axis.text=element_text(size=10),
-        panel.border = element_rect(color='black',fill=NA))
+        panel.border = element_rect(color='black',fill=NA),
+        axis.text.x = element_text(angle=45,hjust=0.7),
+        plot.margin = unit(c(0.1,0.5,0.1,0.1),'cm'))
 footprint_ts_plot
 
 ggsave(here('model output','dts paper','footprint_cpue_ts.png'),footprint_ts_plot,w=8,h=6)
@@ -874,10 +971,22 @@ footprint_reldens_ts_plot <- footprint_reldens_ts %>%
   facet_wrap(~port_name,ncol=1,scales='free_y')+
   theme(legend.position = "left",
         axis.text=element_text(size=10),
-        panel.border = element_rect(color='black',fill=NA))
+        panel.border = element_rect(color='black',fill=NA),
+        axis.text.x = element_text(angle=45,hjust=0.7),
+        plot.margin = unit(c(0.1,0.5,0.1,0.1),'cm'))
 footprint_reldens_ts_plot
 
 ggsave(here('model output','dts paper','footprint_rel_cpue_ts.png'),footprint_reldens_ts_plot,w=6,h=8)
+```
+
+```{r,fig.height=8,fig.width=6}
+# combined log cpue and relative density timeseries
+sppleg <- get_legend(footprint_ts_plot+theme(legend.background = element_rect(color='black'),
+                                             legend.margin = margin(c(0.1,0.5,0.1,0.2),'cm'),
+                                             legend.text = element_text(size=8)))
+footprint_ts_cpue_reldens <- plot_grid(footprint_ts_plot+guides(color='none'),footprint_reldens_ts_plot,sppleg,ncol=3,rel_widths = c(1,1,0.5),labels=c('a','b',''))
+footprint_ts_cpue_reldens
+ggsave(here('model output','dts paper', 'footprint_cpue_relcpue_ts.png'),w=6,h=8)
 ```
 
 ```{r}
@@ -903,27 +1012,116 @@ lic_footprints_all <- list(
 ```
 
 ```{r}
-lic_footprints_all_plot <- lic_footprints_all %>% 
-  mutate(spp1=factor(spp1,levels=c('dover','sable','shortspine','longspine')),
-         spp2=factor(spp2,levels=c('dover','sable','shortspine','longspine'))) %>% 
-  filter(year%in%c(2020,2100)) %>% 
-  # complete(nesting(year,port_name),spp1,spp2) %>% 
-  # filter(spp1!=spp2) %>% 
-  group_by(port_name,spp1,spp2) %>% 
-  summarise(delta_lic=sum_lic[year==2100]-sum_lic[year==2020]) %>% 
-  ggplot(aes(spp1,spp2,fill=delta_lic))+
-  geom_tile(color='black')+
-  facet_wrap(~port_name,ncol = 1)+
-  scale_fill_gradient2(na.value = "gray80")+
-  labs(x="Species 1",y="Species 2",fill="\u0394LIC")+
-  theme(panel.border = element_rect(color='black',fill=NA),
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        panel.background = element_rect(fill='gray80'))
-lic_footprints_all_plot
-
-ggsave(here('model output','dts paper','footprints_lic_tiles.png'),lic_footprints_all_plot,h=8,w=4)
+# lic_footprints_all_plot <- lic_footprints_all %>% 
+#   mutate(spp1=factor(spp1,levels=c('dover','sable','shortspine','longspine')),
+#          spp2=factor(spp2,levels=c('dover','sable','shortspine','longspine'))) %>% 
+#   filter(year%in%c(2020,2100)) %>% 
+#   # complete(nesting(year,port_name),spp1,spp2) %>% 
+#   # filter(spp1!=spp2) %>% 
+#   group_by(port_name,spp1,spp2) %>% 
+#   summarise(delta_lic=sum_lic[year==2100]-sum_lic[year==2020]) %>% 
+#   ggplot(aes(spp1,spp2,fill=delta_lic))+
+#   geom_tile(color='black')+
+#   facet_wrap(~port_name,ncol = 1)+
+#   scale_fill_gradient2(na.value = "gray80")+
+#   labs(x="Species 1",y="Species 2",fill="\u0394LIC")+
+#   theme(panel.border = element_rect(color='black',fill=NA),
+#         panel.grid.major=element_blank(),
+#         panel.grid.minor=element_blank(),
+#         panel.background = element_rect(fill='gray80'))
+# lic_footprints_all_plot
+# 
+# ggsave(here('model output','dts paper','footprints_lic_tiles.png'),lic_footprints_all_plot,h=8,w=4)
 ```
+
+```{r,fig.height=20,fig.width=6}
+# library(ggh4x)
+# lic_footprints_all_plot <- lic_footprints_all %>% 
+#   mutate(spp1=factor(spp1,levels=c('dover','sable','shortspine','longspine')),
+#          spp2=factor(spp2,levels=c('dover','sable','shortspine','longspine'))) %>%
+#   filter(year>=2020) %>% 
+#   ggplot(aes(year,sum_lic))+
+#   geom_point(alpha=0.5)+
+#   geom_smooth(se=F)+
+#   facet_nested_wrap(~port_name+spp1+spp2,scales='free_y',dir='v')
+# lic_footprints_all_plot
+
+# make_lic_footprint_plot <- function(licdat,port){
+#   out <- licdat %>% 
+#     filter(year>=2020,port_name==port) %>% 
+#     group_by(spp1,spp2) %>% 
+#     mutate(anom=sum_lic-sum_lic[year==2020]) %>%  
+#     mutate(spp1=case_when(
+#       spp1=="dover"~"Dover",
+#       spp1=="sable"~"Sablefish",
+#       spp1=="shortspine"~"Shortspine",
+#       spp1=="longspine"~"Longspine"
+#     )) %>% 
+#     mutate(spp2=case_when(
+#       spp2=="dover"~"Dover",
+#       spp2=="sable"~"Sablefish",
+#       spp2=="shortspine"~"Shortspine",
+#       spp2=="longspine"~"Longspine"
+#     )) %>% 
+#     mutate(spp1=factor(spp1,levels=c('Dover','Sablefish','Shortspine','Longspine')),
+#            spp2=factor(spp2,levels=c('Dover','Sablefish','Shortspine','Longspine'))) %>%
+#     ggplot(aes(year,anom))+
+#     geom_point(alpha=0.5)+
+#     geom_smooth(se=F)+
+#     geom_hline(yintercept=0,linetype=2)+
+#     labs(x="Year",y="\u0394LIC",title=port)+
+#     theme(panel.grid.major=element_blank(),panel.grid.minor=element_blank(),
+#           panel.border = element_rect(fill=NA,color='black'))+
+#     facet_wrap2(spp2~spp1,nrow=3,drop=TRUE)
+# 
+#   out
+# }
+# lic_footprints_all_plot <- purrr::map(unique(lic_footprints_all$port_name),make_lic_footprint_plot,licdat=lic_footprints_all) %>% 
+#   plot_grid(plotlist = .,ncol=1)
+# lic_footprints_all_plot
+```
+
+```{r}
+# licdat=lic_footprints_all;s1='sable';s2='shortspine';port='Astoria'
+# make_single_lic_comp <- function(licdat,s1,s2,port){
+#   out <- licdat %>% 
+#     filter(year>=2020,port_name==port,spp1==s1,spp2==s2) %>%
+#     mutate(anom=sum_lic-sum_lic[year==2020]) %>%
+#     mutate(spp1=case_when(
+#       spp1=="dover"~"Dover",
+#       spp1=="sable"~"Sablefish",
+#       spp1=="shortspine"~"Shortspine",
+#       spp1=="longspine"~"Longspine"
+#     )) %>%
+#     mutate(spp2=case_when(
+#       spp2=="dover"~"Dover",
+#       spp2=="sable"~"Sablefish",
+#       spp2=="shortspine"~"Shortspine",
+#       spp2=="longspine"~"Longspine"
+#     )) %>%
+#     mutate(spp1=factor(spp1,levels=c('Dover','Sablefish','Shortspine','Longspine')),
+#            spp2=factor(spp2,levels=c('Dover','Sablefish','Shortspine','Longspine'))) %>%
+#     ggplot(aes(year,anom))+
+#     geom_point(alpha=0.5)+
+#     geom_smooth(se=F)+
+#     ylim(-0.15,0.05)+
+#     geom_hline(yintercept=0,linetype=2)+
+#     theme_void()+
+#     theme(panel.background=element_rect(fill=NULL,color='black'))
+#   
+#   out
+# }
+# make_single_lic_comp(lic_footprints_all,s1='sable',s2='shortspine',port='Astoria')
+# #make all
+# lic_plts <- lic_footprints_all %>% 
+#   distinct(spp1,spp2,port_name) %>% 
+#   rename(s1=spp1,s2=spp2,port=port_name) %>% 
+#   mutate(p=purrr::pmap(.,make_single_lic_comp,licdat=lic_footprints_all))
+# ls <- list(lic_plts$p[[1]],lic_plts$p[[7]],lic_plts$p[[13]],lic_plts$p[[19]],lic_plts$p[[25]],NULL,lic_plts$p[[31]],NULL,NULL)
+# plot_grid(plotlist=ls,nrow=3,ncol=3,byrow=T)
+```
+
+
 Try another visualization (facetted time series)
 
 ```{r,fig.width=4,fig.height=8}
@@ -961,7 +1159,7 @@ Try another visualization (facetted time series)
 # lic_footprints_all_plot2
 ```
 
-```{r,fig.width=6,fig.height=4}
+```{r,fig.height=6,fig.width=6}
 lic_footprints_all_plot2 <- lic_footprints_all %>% 
   filter(year>=2020) %>% 
   mutate(spp1=case_when(
@@ -980,13 +1178,13 @@ lic_footprints_all_plot2 <- lic_footprints_all %>%
   group_by(port_name,spp1,spp2) %>% 
   mutate(anomaly=sum_lic-sum_lic[year==2020]) %>% 
   ungroup() %>%
-  ggplot(aes(year-2000,anomaly,color=pair))+
+  ggplot(aes(year,anomaly,color=pair))+
   geom_point(alpha=0.3,size=0.5)+
   geom_smooth(se=F)+
   geom_hline(yintercept = 0,linetype=2)+
-  scale_color_manual(values=pal6)+
+  scale_color_manual(values=pal6_2)+
   labs(x="Year",y="\u0394LIC",color="Species Pair")+
-  facet_wrap(~port_name,scales='free_y')+
+  facet_wrap(~port_name,scales='free_y',nrow=2)+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         legend.text = element_text(size=8),
@@ -994,6 +1192,6 @@ lic_footprints_all_plot2 <- lic_footprints_all %>%
         panel.border=element_rect(fill=NA,color='black'))
 
 lic_footprints_all_plot2
-ggsave(here('model output','dts paper','footprints_lic_ts.png'),lic_footprints_all_plot2,h=4,w=6)
+ggsave(here('model output','dts paper','footprints_lic_ts.png'),lic_footprints_all_plot2,h=6,w=6)
 ```
 
