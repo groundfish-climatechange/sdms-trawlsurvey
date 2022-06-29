@@ -67,10 +67,11 @@ With the option for linear or spline environmental relationships, and the option
 
 In the following, each of the four models for each Atlantis demersal functional groups is described, along with their relative weighting.
 
-$$D= 1 - 0.5*\sum_{1}^{n}{|p_{k,i}-p_{j,i}|}$$
+$$D= 1 - 0.5\sum_{i=1}^{n}{|p_{k,i}-p_{j,i}|}$$
 
-$$ L = \frac{\sum_{1}^{n}{p_{k,i}}*p_{j,i}}{\sqrt{{\sum_{1}^{n}p_{k,i}^2}{\sum_{1}^{n}p_{j,i}^2}}}$$
+$$ LIC = \frac{\sum_{i=1}^{n}{p_{k,i}}p_{j,i}}{\sqrt{{\sum_{i=1}^{n}p_{k,i}^2}{\sum_{i=1}^{n}p_{j,i}^2}}}$$
+$$p_{ki} = \frac{Y_{ki}}{\sum_{i=1}^{n}Y_{ki}}$$
 
 $$ GIC = 1-\frac{\Delta CG_{k,j}^2}{\Delta CG_{k,j}^2+I_k+I_j}$$
 
-$$I_k =\frac{\sum_{i}^{n}(x_i-CG)^2*k_i}{\sum_{i}^{n}k_i}$$
+$$I_k =\frac{\sum_{i=1}^{n}(x_i-CG)^2*b_i}{\sum_{i=1}^{n}b_i}$$

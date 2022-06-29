@@ -310,6 +310,8 @@ make_predictions <- function(modelobj,gcm="hadl"){
   sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
   mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
   sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  mean_depth <- mean(original_model_data$depth_trawl,na.rm=T)
+  sd_depth <- sd(original_model_data$depth_trawl,na.rm=T)
   
   # create a new tibble with the projected data for the chosen gcm
   newdata <- roms %>% 
@@ -325,10 +327,15 @@ make_predictions <- function(modelobj,gcm="hadl"){
   oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
     set_names('oxygen') %>% 
     mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+  
+  depth_new <- newdata %>% dplyr::select(contains('depth')) %>% 
+    set_names('depth') %>% 
+    mutate(depth_trawl_norm=(depth-mean_depth)/sd_depth)
 
   newdata <- newdata %>% 
     bind_cols(temperature) %>% 
     bind_cols(oxygen) %>% 
+    bind_cols(depth_new) %>% 
     dplyr::select(-temperature,-oxygen) %>%
     mutate(year=as.double(year))
   

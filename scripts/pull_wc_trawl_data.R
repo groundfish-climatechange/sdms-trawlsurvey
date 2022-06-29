@@ -61,8 +61,15 @@ cope_haltuch = c("aurora rockfish", "big skate", "bigfin eelpout",
 # extras for atlantis groups
 atlantis_extras <- c("bocaccio","yelloweye rockfish","pacific ocean perch","pacific halibut")
 
+# extras for WC CVA analysis
+# compare to CVA species list
+sppCVA <- read_csv(here('data','species_CVA.csv')) %>% 
+  mutate(sci=tolower(Scientific),
+         spp=tolower(Species)) %>% 
+  pull(spp)
+
 # these are additional species on the prioritization spreadsheet
-fram = c(cope_haltuch,atlantis_extras, "vermilion and sunset rockfish",
+fram = c(cope_haltuch,atlantis_extras,sppCVA,"vermilion and sunset rockfish",
          "black rockfish",'california halibut',
          "cowcod","copper rockfish",
          "brown rockfish","quillback rockfish",
@@ -83,6 +90,7 @@ fram = c(cope_haltuch,atlantis_extras, "vermilion and sunset rockfish",
 #dat = dplyr::filter(dat, common_name %in% cope_haltuch)
 
 # filter by species that occur in 10% of hauls
+# RULE: keep all species of special interest (i.e., lists above) AND any other fish species occurring in >10% of hauls
 threshold = 0.1
 
 keep = dat %>% 
