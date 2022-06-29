@@ -65,7 +65,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_s
   enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
                                       "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
                    enviro)
-  # if depth effect, add to model formla
+  # if depth effect, add to model formula
   if(use_depth) {
     formula = paste0(formula, " + depth_trawl_norm + I(depth_trawl_norm^2)")
   }
@@ -125,7 +125,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_s
 }
 ```
 
-# Choose a species!
+## Choose a species! (Yelloweye Rockfish)
 
 ```{r}
 spp <- "yelloweye rockfish"
@@ -188,6 +188,203 @@ make_predictions <- function(modelobj,gcm="hadl"){
 ```{r}
 preds <-make_predictions(m,gcm='hadl')
 preds <- preds$data
+```
+
+```{r}
+map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(model_ens$est),0.99))
+  df <- model_ens %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(projection_extent)
+  
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+  
+  else{
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      scale_fill_viridis_c(limits=scl)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
+  }
+  out
+}
+```
+
+```{r}
+map_year(preds,yr_vec = 2100)
+```
+
+```{r}
+make_comparison_map <- function(model_ens,yr=2050){
+  basepred <- map_year(model_ens,yr_vec=1980:2010,return_pred_df = T)
+  newpred <- map_year(model_ens,yr_vec=yr,return_pred_df = T) %>% 
+    mutate(est_comp=est) %>% dplyr::select(-est)
+  both <- basepred %>% 
+    left_join(newpred,by=c('X','Y')) %>% 
+    mutate(diffpred=est_comp-est)
+  
+  bbox=st_bbox(projection_extent)
+  
+  out<-ggplot(coast)+
+        geom_sf()+
+        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+        # scale_color_viridis_c()+
+        geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
+        scale_fill_gradient2(low = "red", mid = "white", high = "purple")+
+        # scale_fill_viridis_c(direction = -1)+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(x="",y="",fill="Difference")
+  out
+}
+```
+
+```{r}
+make_comparison_map(preds, yr = 2100)
+```
+
+## Choose a species! (pacific spiny dogfish)
+
+```{r}
+spp <- "pacific spiny dogfish"
+
+spp_dat <- prepare_species(trawl_roms_utm,spp)
+
+```
+
+# Model output
+
+```{r}
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="pacific spiny dogfish",use_depth=F,env_spline=T)
+summary(m)
+library(vista)
+```
+
+# Make predictions
+
+```{r}
+# give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', 'ipsl'
+make_predictions <- function(modelobj,gcm="hadl"){
+
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  
+  # create a new tibble with the projected data for the chosen gcm
+  newdata <- roms %>% 
+    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
+    left_join(hab,by=c("lat","lon")) %>% 
+    drop_na() %>% 
+    dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
+  
+  temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
+    set_names('temperature') %>% 
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
+    set_names('oxygen') %>% 
+    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+
+  newdata <- newdata %>% 
+    bind_cols(temperature) %>% 
+    bind_cols(oxygen) %>% 
+    dplyr::select(-temperature,-oxygen) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  # now we can make the predictions
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=T,extra_time=yrs)
+  
+  predicted_cpue_km2
+}
+```
+
+```{r}
+preds <-make_predictions(m,gcm='hadl')
+preds <- preds$data
+```
+
+```{r}
+map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(model_ens$est),0.99))
+  df <- model_ens %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(projection_extent)
+  
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+  
+  else{
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      scale_fill_viridis_c(limits=scl)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
+  }
+  out
+}
+```
+
+```{r}
+map_year(preds,yr_vec = 2050)
+```
+
+```{r}
+make_comparison_map <- function(model_ens,yr=2050){
+  basepred <- map_year(model_ens,yr_vec=1980:2010,return_pred_df = T)
+  newpred <- map_year(model_ens,yr_vec=yr,return_pred_df = T) %>% 
+    mutate(est_comp=est) %>% dplyr::select(-est)
+  both <- basepred %>% 
+    left_join(newpred,by=c('X','Y')) %>% 
+    mutate(diffpred=est_comp-est)
+  
+  bbox=st_bbox(projection_extent)
+  
+  out<-ggplot(coast)+
+        geom_sf()+
+        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+        # scale_color_viridis_c()+
+        geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
+        scale_fill_gradient2(low = "red", mid = "white", high = "purple")+
+        # scale_fill_viridis_c(direction = -1)+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(x="",y="",fill="Difference")
+  out
+}
+```
+
+```{r}
+make_comparison_map(preds, yr = 2050)
 ```
 
 
