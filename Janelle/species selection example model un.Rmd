@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidyverse)
 library(vista)
+library(mgcv)
 ```
 
 # Load Data
@@ -37,7 +38,7 @@ prepare_species <- function(dat,spp){
 ```
 
 ```{r}
-run_sdmTMB <- function(dat,spp,use_depth=T,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3){
+run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_substrate=F,hab_spline=F,env_spline=F,spline_k=3){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -127,7 +128,7 @@ run_sdmTMB <- function(dat,spp,use_depth=T,time_vary=F,spatial_field=T,include_s
 ## Choose a species
 
 ```{r}
-spp <- "longnose skate"
+spp <- "dover sole"
 
 spp_dat <- prepare_species(trawl_roms_utm,spp)
 
@@ -136,14 +137,14 @@ spp_dat <- prepare_species(trawl_roms_utm,spp)
 # Model output
 
 ```{r}
-m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,env_spline=T)
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="dover sole",use_depth=F,env_spline=T,include_substrate=F)
 summary(m)
 ```
+
 
 # Make predictions
 
 ```{r}
-# give the function a model object from sdmTMB, and a global climate model, either 'hadl','gfdl', 'ipsl'
 make_predictions <- function(modelobj,gcm="hadl"){
 
   original_model_data <- modelobj$data
@@ -152,6 +153,8 @@ make_predictions <- function(modelobj,gcm="hadl"){
   sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
   mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
   sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  mean_depth <- mean(original_model_data$depth_trawl,na.rm=T)
+  sd_depth <- sd(original_model_data$depth_trawl,na.rm=T)
   
   # create a new tibble with the projected data for the chosen gcm
   newdata <- roms %>% 
@@ -167,11 +170,16 @@ make_predictions <- function(modelobj,gcm="hadl"){
   oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
     set_names('oxygen') %>% 
     mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+  
+  depth_new <- newdata %>% dplyr::select(contains('depth')) %>% 
+    set_names('depth') %>% 
+    mutate(depth_trawl_norm=(depth-mean_depth)/sd_depth)
 
   newdata <- newdata %>% 
     bind_cols(temperature) %>% 
     bind_cols(oxygen) %>% 
-    dplyr::select(-temperature,-oxygen) %>%
+    bind_cols(depth_new) %>% 
+    dplyr::select(-temperature,-oxygen, -depth) %>%
     mutate(year=as.double(year))
   
   # years to predict
@@ -184,11 +192,23 @@ make_predictions <- function(modelobj,gcm="hadl"){
 ```
 
 ```{r}
-preds <-make_predictions(m, gcm = "hadl")
-preds <- preds$data
+spp_dat$pred = predict(m)
+spp_dat$resid = residuals(m)
 ```
 
+```{r}
+pred_space(df = spp_dat, time = "year")
+```
+
+
 # mapping, annual map
+```{r}
+# pretty grid for raster maps
+gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+  st_intersection(projection_extent)
+gr_xy <- st_coordinates(gr)
+```
+
 ```{r}
 map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
   # scale for the legend, common within species
@@ -223,8 +243,10 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
 }
 ```
 
+
+
 ```{r}
-map_year(preds,yr_vec = 2100)
+map_year(preds,yr_vec = c(1980:2020))
 ```
 
 
@@ -254,5 +276,5 @@ make_comparison_map <- function(model_ens,yr=2050){
 ```
 
 ```{r}
-make_comparison_map(preds, yr = 2100)
+make_comparison_map(preds, yr = 2025:2100)
 ```
