@@ -73,10 +73,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_s
   if(!include_substrate) substrate=""
   
   # make the environmental effects
-  enviro <- paste("mean_temp_roms_30_norm + 
-                  I(mean_temp_roms_30_norm^2) + 
-                  mean_oxygen_roms_30_norm + 
-                  I(mean_oxygen_roms_30_norm^2)")
+  enviro <- paste("mean_temp_roms_30_norm + I(mean_temp_roms_30_norm^2) + mean_oxygen_roms_30_norm + I(mean_oxygen_roms_30_norm^2)")
   # wiggly environmental relationships?
   enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
                                       "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
@@ -92,7 +89,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=T,include_s
     time_varying = as.formula(time_formula)
     time = "year"
   } else {
-    formula = paste0(formula, " + ", substrate, " + ", enviro)
+    formula = paste0(formula, substrate, " + ", enviro)
     time_varying = NULL
     time = "year"
   }
@@ -162,7 +159,6 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
   #wiggly habitat relationship?
   substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
                       substrate)
-  
   if(!include_substrate) substrate=""
   
   # make the environmental effects
@@ -173,17 +169,16 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
                    enviro)
   # if depth effect, add to model formla
   if(use_depth) {
-    formula = paste0(formula, " + depth + I(depth^2)")
+    formula = paste0(formula, " + depth_trawl_norm + I(depth_trawl_norm^2)")
   }
   
   time_formula = "~ -1"
-  
   if(time_vary) {
     time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
     time_varying = as.formula(time_formula)
     time = "year"
   } else {
-    formula = paste0(formula, " + ", substrate, " + ", enviro)
+    formula = paste0(formula, substrate, " + ", enviro)
     time_varying = NULL
     time = "year"
   }
@@ -207,7 +202,7 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_fie
     family = tweedie(link = "log"),
     data = modeldat,
     anisotropy = FALSE,
-    spatial_only = spatial_field
+    spatial = spatial_field
     #extra_time argument necessary for prediction?
     # extra_time=1980:2100,
     # control=sdmTMBcontrol(map_rf=ifelse(spatial_field,F,T))
@@ -336,7 +331,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
     bind_cols(temperature) %>% 
     bind_cols(oxygen) %>% 
     bind_cols(depth_new) %>% 
-    dplyr::select(-temperature,-oxygen) %>%
+    dplyr::select(-temperature,-oxygen,-depth) %>%
     mutate(year=as.double(year))
   
   # years to predict
@@ -354,8 +349,9 @@ To create ensemble predictions, we calculate predictions for each species' model
 
 ```{r}
 # this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
-ensemble_predictions <- function(model_df,gcm='hadl'){
-  
+# if nsim > 0, simulate from the joint precision matrix to establish uncertainty
+ensemble_predictions <- function(model_df,gcm='hadl',nsims=0){
+  tic('projecting ensemble model.')
   # use the first model in the list to pull out the data
   original_model_data <- model_df %>% pluck('model',1,'data')
   # need to use the original (hindcast) environmental data to scale the projected data
@@ -366,7 +362,6 @@ ensemble_predictions <- function(model_df,gcm='hadl'){
   
   # create a new tibble with the projected data for the chosen gcm
   newdata <- roms %>% 
-    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
     dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
@@ -390,21 +385,44 @@ ensemble_predictions <- function(model_df,gcm='hadl'){
   
   # model weights
   w <- model_df %>% pluck('weight')
-  w <- ifelse(all(is.na(w)),rep(1,length(w)),w)
+  if(all(is.na(w))) w = rep(1,length(w))
   
   model_list <- model_df %>% pluck('model')
   
-  # make the predictions for all 8 models
-  all_predictions <- purrr::map2_df(model_list,w,function(m,weight){
-    preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs) %>% 
-      mutate(weight=weight)
-    preds
-  })
-  ens_preds <- all_predictions %>% 
-    group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
-    summarise(ens_est=weighted.mean(est,weight)) %>% 
-    ungroup()
-  
+  # make the predictions for all 4 models
+  if(nsims==0){
+      all_predictions <- purrr::map2_df(model_list,w,function(m,weight){
+        preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs,nsim=nsims) %>% 
+        mutate(weight=weight)
+        preds
+    })
+      
+    ens_preds <- all_predictions %>% 
+      group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
+      summarise(ens_est=weighted.mean(est,weight)) %>% 
+      ungroup() %>% 
+      mutate(esm=gcm)
+        
+  } else {
+      # tic('testing times')
+      all_predictions <- purrr::map2(model_list,w,function(m,weight){
+        # 10 sims = 25s; 50 sims = 50s; 100 sims= 65s
+        # apply the model weight to ALL simulations
+        preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs,nsim=nsims)*weight
+        preds
+      }) %>%
+        # then add them at the end
+        reduce(`+`) %>% 
+      # reform back into a dataframe and add identifiers from newdata
+        as_tibble(.name_repair='minimal') %>% set_names(paste0('sim',1:100))
+      ens_preds <- newdata %>% 
+        dplyr::select(year,longitude,latitude,lat,lon,depth_m) %>% 
+        bind_cols(all_predictions) %>% 
+        mutate(esm=gcm)
+      # toc()
+  }
+  # For 4 models, with 100 sims, took ~300s or about 5 minutes
+  toc()
   ens_preds
 }
 ```

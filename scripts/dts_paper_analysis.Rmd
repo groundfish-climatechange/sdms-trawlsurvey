@@ -1,0 +1,132 @@
+---
+title: "Climate change effects on future groundfish availability to U.S. west coast fishing ports"
+author: "Owen Liu"
+date: '2022-07-05'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+# devtools::install_github("pbs-assess/sdmTMB")
+library(sdmTMB)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(viridis)
+# vista is Eric Ward's library for looking at outputs
+library(vista)
+library(cowplot)
+library(ggalt)
+library(RANN)
+library(furrr)
+library(future)
+library(tictoc)
+library(ggsci)
+library(ggpubr)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=12,color="black"),
+        legend.text = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=12,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+pal <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
+pal6 <- viridis_pal(option="C",begin=0.2,end=0.8)(6)
+pal6_2 <- viridis_pal(option="B",begin=0.2,end=0.8)(6)
+```
+
+Load functions and data used for models. This command sources code and data from the `sdmTMB model functions` and `sdmTMB data construction` scripts.
+
+```{r}
+rmarkdown::render(here::here('scripts','sdmTMB model functions.Rmd'),quiet=TRUE)
+```
+
+# Model Species
+
+Use `sdmTMB` to make ensemble models for each species of interest. (if these models have already been run, can just load them rather than running them again)
+
+```{r,eval=F}
+spp_to_model <- c("dover sole","sablefish","shortspine thornyhead","longspine thornyhead")
+```
+
+Run models and save cross-validation model stacking weights. (note: this chunk is turned to eval=F for now)
+
+## Fit Models
+
+```{r,eval=F}
+for(i in 1:length(spp_to_model)){
+  s <- spp_to_model[i]
+  m <- model_species(s,data = trawl_roms_utm,use_substrate = F)
+  write_rds(m,here::here('model output','dts paper',paste(s,'models.rds')))
+  print(paste(s,'models finished'))
+}
+```
+
+## Make Ensemble Predictions
+
+We project across all 3 ESMs, weighting each equally
+
+```{r,eval=F}
+dover_models <- read_rds(here::here('model output','dts paper','dover sole models.rds'))
+sable_models <- read_rds(here::here('model output','dts paper','sablefish models.rds'))
+ss_models <- read_rds(here::here('model output','dts paper','shortspine thornyhead models.rds'))
+ls_models <- read_rds(here::here('model output','dts paper','longspine thornyhead models.rds'))
+```
+
+IPSL
+```{r}
+dover_ens_ipsl <- ensemble_predictions(dover_models,gcm='ipsl')
+sable_ens_ipsl <- ensemble_predictions(sable_models,gcm='ipsl')
+ss_ens_ipsl <- ensemble_predictions(ss_models,gcm="ipsl")
+ls_ens_ipsl <- ensemble_predictions(ls_models,gcm='ipsl')
+
+write_rds(dover_ens_ipsl,here('model output','dts paper','dover_ensemble_preds_ipsl.rds'))
+write_rds(sable_ens_ipsl,here('model output','dts paper','sable_ensemble_preds_ipsl.rds'))
+write_rds(ss_ens_ipsl,here('model output','dts paper','ss_ensemble_preds_ipsl.rds'))
+write_rds(ls_ens_ipsl,here('model output','dts paper','ls_ensemble_preds_ipsl.rds'))
+```
+
+GFDL
+```{r}
+dover_ens_gfdl <- ensemble_predictions(dover_models,gcm='gfdl')
+sable_ens_gfdl <- ensemble_predictions(sable_models,gcm='gfdl')
+ss_ens_gfdl <- ensemble_predictions(ss_models,gcm="gfdl")
+ls_ens_gfdl <- ensemble_predictions(ls_models,gcm='gfdl')
+
+write_rds(dover_ens_gfdl,here('model output','dts paper','dover_ensemble_preds_gfdl.rds'))
+write_rds(sable_ens_gfdl,here('model output','dts paper','sable_ensemble_preds_gfdl.rds'))
+write_rds(ss_ens_gfdl,here('model output','dts paper','ss_ensemble_preds_gfdl.rds'))
+write_rds(ls_ens_gfdl,here('model output','dts paper','ls_ensemble_preds_gfdl.rds'))
+```
+
+Hadley
+```{r}
+dover_ens_hadl <- ensemble_predictions(dover_models,gcm='hadl')
+sable_ens_hadl <- ensemble_predictions(sable_models,gcm='hadl')
+ss_ens_hadl <- ensemble_predictions(ss_models,gcm="hadl")
+ls_ens_hadl <- ensemble_predictions(ls_models,gcm='hadl')
+
+write_rds(dover_ens_hadl,here('model output','dts paper','dover_ensemble_preds_hadl.rds'))
+write_rds(sable_ens_hadl,here('model output','dts paper','sable_ensemble_preds_hadl.rds'))
+write_rds(ss_ens_hadl,here('model output','dts paper','ss_ensemble_preds_hadl.rds'))
+write_rds(ls_ens_hadl,here('model output','dts paper','ls_ensemble_preds_hadl.rds'))
+```
+
+### Join 3 ESM Predictions
+
+```{r}
+
+```
+
