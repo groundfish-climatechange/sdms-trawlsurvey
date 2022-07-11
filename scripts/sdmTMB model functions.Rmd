@@ -390,6 +390,7 @@ ensemble_predictions <- function(model_df,gcm='hadl',nsims=0){
   model_list <- model_df %>% pluck('model')
   
   # make the predictions for all 4 models
+  set.seed(41389) # for reproducibility and consistency
   if(nsims==0){
       all_predictions <- purrr::map2_df(model_list,w,function(m,weight){
         preds <- predict(m,newdata=newdata,return_tmb_object=F,extra_time=yrs,nsim=nsims) %>% 
@@ -488,8 +489,8 @@ map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95,show_foo
     filter(year==yr) %>% 
     # find quantiles for each species
     group_by(species) %>% 
-    mutate(qlow=quantile(ens_est,qlower),qhigh=quantile(ens_est,qupper)) %>% 
-    mutate(presence=ifelse(ens_est>=qlow&ens_est<=qhigh,1,0)) %>% 
+    mutate(qlow=quantile(median_est,qlower),qhigh=quantile(median_est,qupper)) %>% 
+    mutate(presence=ifelse(median_est>=qlow&median_est<=qhigh,1,0)) %>% 
     ungroup() %>% 
     group_by(longitude,latitude) %>% 
     summarise(sumspp=sum(presence))
@@ -518,6 +519,59 @@ map_multispp_year <- function(multi_ens,yr=2020,qlower=0.05,qupper=0.95,show_foo
 }
 ```
 
+## Multispecies Difference Map
+
+Map overlap between multiple species
+
+```{r}
+map_multispp_diff <- function(multi_ens,yr1=2020,yr2=2100,qlower=0.05,qupper=0.95,show_footprints=F,show_bathy=T){
+  df1 <- multi_ens %>% 
+    filter(year==yr1) %>% 
+    # find quantiles for each species
+    group_by(species) %>% 
+    mutate(qlow=quantile(median_est,qlower),qhigh=quantile(median_est,qupper)) %>% 
+    mutate(presence=ifelse(median_est>=qlow&median_est<=qhigh,1,0)) %>% 
+    ungroup() %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(sumspp1=sum(presence))
+  df2 <- multi_ens %>% 
+    filter(year==yr2) %>% 
+    # find quantiles for each species
+    group_by(species) %>% 
+    mutate(qlow=quantile(median_est,qlower),qhigh=quantile(median_est,qupper)) %>% 
+    mutate(presence=ifelse(median_est>=qlow&median_est<=qhigh,1,0)) %>% 
+    ungroup() %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(sumspp2=sum(presence))
+   df <- df1 %>% 
+     left_join(df2) %>% 
+     mutate(diff=sumspp2-sumspp1)
+   
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(diff=df$diff[nns])
+  
+  bbox=st_bbox(projection_extent)
+
+  out<-ggplot()+
+    # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+    # scale_color_viridis_c()+
+    geom_raster(data=gr_pred,aes(x=X,y=Y,fill=factor(diff)),interpolate=F)+
+    scale_fill_brewer(type='div',direction=1,guide=guide_legend(reverse=T))+
+    # scale_fill_manual(values=rev(viridis_pal(option="C",begin=0.2,end=0.8)(5)))+
+    # geom_sf(data=footprints,fill=NA,col='red')+
+    geom_sf(data=coast,col='gray50')+
+    coord_sf(datum=NA)+
+    xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+    labs(x="",y="",fill="# Species",title='')+
+    theme(legend.position=c(0.55,0.6))
+
+  if(show_footprints) out <- out + geom_sf(data=footprints,fill=NA,col='black')
+  if(show_bathy) out <- out + geom_sf(data=isobaths,col='gray30')
+  out+coord_sf(datum=NA)
+}
+```
 
 ## Difference Map
 
@@ -623,7 +677,9 @@ make_cog <- function(model_df,gcm='hadl',what="plot"){
     # add weights
     mutate(weight=ws) %>% 
     group_by(year) %>% 
-    summarise(w.est_x=weighted.mean(est_x,w=weight)) %>% 
+    summarise(w.est_x=weighted.mean(est_x,w=weight),
+              w.est_xlwr = weighted.mean(lwr_x,w=weight),
+              w.est_xupr = weighted.mean(upr_x,w=weight)) %>% 
     ungroup()
   cog_y <- cogs %>% 
     filter(coord=="Y") %>% 
@@ -632,7 +688,9 @@ make_cog <- function(model_df,gcm='hadl',what="plot"){
     # add weights
     mutate(weight=ws) %>% 
     group_by(year) %>% 
-    summarise(w.est_y=weighted.mean(est_y,w=weight)) %>% 
+    summarise(w.est_y=weighted.mean(est_y,w=weight),
+              w.est_ylwr = weighted.mean(lwr_y,w=weight),
+              w.est_yupr = weighted.mean(upr_y,w=weight)) %>% 
     ungroup()
   cog_2d <- cog_x %>% left_join(cog_y,by='year')
   
@@ -701,37 +759,48 @@ plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2
 
 Option 2: Fraction of estimated CPUE that is deeper than 700 fathoms (~1280m)
 ```{r}
-
 pal4 <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
-plot_depth_distribution2 <- function(ens_preds,start_year=2020,end_year=2100){
-  y <- ens_preds %>% 
+
+plot_depth_distribution2 <- function(multisims_df,start_year=2020,end_year=2100){
+  y <- multisims_df %>% 
     mutate(spp_plotting=case_when(
       species=='dover' ~ "Dover Sole",
-      species=="ls_thornyhead" ~ "Longspine",
-      species=="ss_thornyhead"~"Shortspine",
+      species=="ls" ~ "Longspine",
+      species=="ss"~"Shortspine",
       species=="sable" ~"Sablefish"
     )) %>% 
     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
     filter(year>=start_year,year<=end_year) %>%
-    mutate(cpue=exp(ens_est)) %>% 
+    mutate(cpue_mean=exp(mean_est),
+           cpue_low=exp(est5),
+           cpue_high=exp(est95)) %>% 
     rename(depth=depth_m) %>% 
     group_by(spp_plotting,year,depth) %>% 
-    summarise(cpue=mean(cpue,na.rm=T)) %>% 
+    summarise(cpue_mean=mean(cpue_mean,na.rm=T),
+              cpue_low=mean(cpue_low,na.rm=T),
+              cpue_high=mean(cpue_high,na.rm=T)) %>% 
     ungroup() %>% 
     group_by(spp_plotting,year) %>% 
-    mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
+    mutate(prop_cpue_mean=cpue_mean/sum(cpue_mean,na.rm=T),
+           prop_cpue_low=cpue_low/sum(cpue_low,na.rm=T),
+           prop_cpue_high=cpue_high/sum(cpue_high,na.rm=T)) %>%
     ungroup() %>% 
     mutate(is_deep=depth < -1280) %>% 
     group_by(spp_plotting,year,is_deep) %>% 
-    summarise(prop=sum(prop_cpue)) %>%
+    summarise(prop_mean=sum(prop_cpue_mean),
+              prop_low=sum(prop_cpue_low),
+              prop_high=sum(prop_cpue_high)) %>%
     ungroup()
+  
   y %>% 
     filter(!is_deep) %>% 
-    ggplot(aes(year,prop,col=spp_plotting))+
+    ggplot(aes(x=year,y=prop_mean,ymin=prop_low,ymax=prop_high,fill=spp_plotting,col=spp_plotting))+
+    geom_ribbon(alpha=0.5)+
     geom_line(size=1.5)+
     scale_color_manual(values=pal4)+
+    scale_fill_manual(values=pal4)+
     # scale_color_manual(values=c("#2271B2","#d55e00"))+
-    labs(x="Year",y="Proportion < 700 fathoms",title="",col="Species")+
+    labs(x="Year",y="Proportion < 700 fathoms",title="",col="Species",fill="Species")+
     theme(axis.text.x=element_text(size=10),
           axis.text.y=element_text(size=10))
 }
@@ -769,59 +838,6 @@ plot_dist_to_shore <- function(ens_preds,include_legend=T){
         scale_y_reverse(limits=c(90,20))+
         coord_flip()+
         labs(y="",x="",col="")
-  }
-
-  p
-}
-```
-
-```{r}
-# right now this works on a group of ensemble outputs
-plot_dist_to_shore_change <- function(multispp_df,include_legend=T){
-  d <- multispp_df %>%  
-    left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
-    group_by(species,year,lat) %>% 
-    mutate(totest = sum(exp(ens_est))) %>% 
-    mutate(rel_est=exp(ens_est)/totest) %>% 
-    mutate(w.dist=rel_est*km_to_coast) %>% 
-    summarise(w.dist=sum(w.dist)) %>% 
-    ungroup() %>% 
-    group_by(species,lat) %>% 
-    mutate(change_from_2020=w.dist-w.dist[year==2020]) %>% 
-    ungroup() %>% 
-    filter(year==2100) %>% 
-    mutate(spp_plotting=case_when(
-      species=='dover' ~ "Dover Sole",
-      species=="ls_thornyhead" ~ "Longspine",
-      species=="ss_thornyhead"~"Shortspine",
-      species=="sable" ~"Sablefish"
-    )) %>% 
-    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
-  
-  if(include_legend){
-      p <- d %>% 
-        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
-        geom_line(size=1.2)+
-        geom_hline(yintercept=0,linetype=2)+
-        ylim(-6,25)+
-        scale_color_manual(values=pal4)+
-        # scale_y_reverse(limits=c(90,20))+
-        coord_flip()+
-        # theme(legend.position = c(0.8,0.7))+
-        labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species")+
-        theme(panel.background = element_rect(fill=NA,color='black'))
-  } else {
-      p <- d %>% 
-        ggplot(aes(lat,change_from_2020,color=spp_plotting))+
-        geom_line(size=1.2)+
-        geom_hline(yintercept=0,linetype=2)+
-        ylim(-6,25)+
-        scale_color_manual(values=pal4,guide='none')+
-        # scale_color_viridis(option="A",guide="none")+
-        # scale_y_reverse(limits=c(90,20))+
-        coord_flip()+
-        labs(y="Change in Distance from Shore (km)",x="Latitude")+
-        theme(panel.background = element_rect(fill=NA,color='black'))
   }
 
   p
@@ -1153,8 +1169,8 @@ require(concaveman)
 make_spp_concave_hull <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=5,threshold=0.05){
   df <- ens_preds %>% 
     filter(year %in% yr_vec) %>%
-    mutate(ens_est=exp(ens_est)) %>%
-    filter(ens_est>=quantile(ens_est,threshold)) %>% 
+    mutate(mean_est=exp(mean_est)) %>%
+    filter(mean_est>=quantile(mean_est,threshold)) %>% 
     ungroup() %>% 
     dplyr::select(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
     as.matrix()
@@ -1169,18 +1185,18 @@ make_spp_concave_hull <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=5
 affinities_ellipses <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold=0.25,return_what='df'){
   df <- ens_preds %>% 
     filter(year %in% yr_vec) %>%
-    mutate(ens_est=exp(ens_est)) %>%
-    dplyr::select(species,year,ens_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+    mutate(mean_est=exp(mean_est)) %>%
+    dplyr::select(species,year,mean_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
     group_by(species) %>% 
-    nest(data=c(year,ens_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl)) %>% 
+    nest(data=c(year,mean_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl)) %>% 
     mutate(p=map(data,make_spp_concave_hull,sppname=species,concavity=concavity,threshold=threshold)) %>% 
     ungroup()
   
   ps <- do.call(rbind,df$p) %>% 
     mutate(spp_plotting=case_when(
       spp=='dover' ~ "Dover Sole",
-      spp=="ls_thornyhead" ~ "Longspine",
-      spp=="ss_thornyhead"~"Shortspine",
+      spp=="ls" ~ "Longspine",
+      spp=="ss"~"Shortspine",
       spp=="sable" ~"Sablefish"
     )) %>% 
     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
@@ -1462,3 +1478,110 @@ calc_footprint_overlap_ts <- function(ens1,ens2,fp=footprints){
 }
 ```
 
+# Functions for Multiple Simulations
+
+We ran sdmTMB models and projected them under multiple future climate scenarios, as well as produced 100 simulations, varying parameter values by pulling randomly from the model's joint precision matrix. These functions are to produce figures based on these multiple simulations
+
+## Distance to Shore Change
+```{r}
+calc_rel_dist_to_shore <- function(sims_df){
+  
+  d <- sims_df %>% 
+    left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+    group_by(esm,year,lat) %>% 
+    summarise(across(contains("sim"),function(x) sum(exp(x)/sum(exp(x))*km_to_coast))) %>% 
+    ungroup() %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='dist')
+}
+```
+
+
+```{r}
+# plot_dist_to_shore_change <- function(multisims_df,include_legend=T){
+#   d <- multisims_df %>%  
+#     left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
+#     group_by(species,year,lat) %>% 
+#     mutate(totest = sum(exp(mean_est)),
+#            lower=sum(exp(est5)),
+#            upper=sum(exp(est95))) %>% 
+#     mutate(rel_est=exp(mean_est)/totest,
+#            rel_est_lower=exp(est5)/lower,
+#            rel_est_upper=exp(est95)/upper) %>% 
+#     mutate(w.dist=rel_est*km_to_coast,
+#            w.dist.lower=rel_est_lower*km_to_coast,
+#            w.dist.upper=rel_est_upper*km_to_coast) %>% 
+#     summarise(w.dist=sum(w.dist),
+#               w.dist.lower=sum(w.dist.lower),
+#               w.dist.upper=sum(w.dist.upper)) %>% 
+#     ungroup() 
+#   # 1985-2010 means
+#   d2 <- d %>% 
+#     filter(year %in% c(1985:2010)) %>% 
+#     group_by(species,lat) %>% 
+#     summarise(w.dist.hist=mean(w.dist),
+#               w.dist.hist.low=mean(w.dist.lower),
+#               w.dist.hist.high=mean(w.dist.upper)) %>% 
+#     ungroup()
+#   
+#   # 2075-2100 means
+#   d3 <-  d %>% 
+#     filter(year %in% c(2075:2100)) %>% 
+#     group_by(species,lat) %>% 
+#     summarise(w.dist.fut=mean(w.dist),
+#               w.dist.fut.low=mean(w.dist.lower),
+#               w.dist.fut.high=mean(w.dist.upper)) %>% 
+#     ungroup()
+#   
+#   # difference
+#   
+#   d4 <- d2 %>% 
+#     left_join(d3,by=c('species','lat'))%>% 
+#     mutate(change1=w.dist.fut-w.dist.hist,
+#            change2=w.dist.fut.low-w.dist.hist.low,
+#            change3=w.dist.fut.high-w.dist.hist.high) %>% 
+#     # mutate(low=pmin(change1,change2,change3),
+#     #        high=pmax(change1,change2,change3)) %>% 
+#     mutate(spp_plotting=case_when(
+#       species=='dover' ~ "Dover Sole",
+#       species=="ls" ~ "Longspine",
+#       species=="ss"~"Shortspine",
+#       species=="sable" ~"Sablefish"
+#     )) %>% 
+#     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+#     dplyr::select(species,lat,spp_plotting,contains("change")) %>% 
+#     pivot_longer(contains("change"),names_to="obs",values_to="w.dist.change")
+#   
+#   if(include_legend){
+#       p <- d4 %>% 
+#         ggplot(aes(x=lat,y=w.dist.change,col=spp_plotting))+
+#         # geom_ribbon(alpha=0.5,col=NA)+
+#         geom_point(size=0.7,alpha=0.5)+
+#         geom_smooth(se=F)+
+#         geom_hline(yintercept=0,linetype=2)+
+#         # ylim(-6,25)+
+#         scale_color_manual(values=pal4)+
+#         # scale_fill_manual(values=pal4)+
+#         # scale_y_reverse(limits=c(90,20))+
+#         coord_flip()+
+#         # theme(legend.position = c(0.8,0.7))+
+#         labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species")+
+#         theme(panel.background = element_rect(fill=NA,color='black'))
+#   } else {
+#       p <- d4 %>% 
+#         ggplot(aes(x=lat,y=w.dist.change,col=spp_plotting))+
+#         # geom_ribbon(alpha=0.5,col=NA)+
+#         geom_point(size=0.7,alpha=0.5)+
+#         geom_smooth(se=F)+
+#         geom_hline(yintercept=0,linetype=2)+
+#         # ylim(-6,25)+
+#         scale_color_manual(values=pal4,guide='none')+
+#         # scale_fill_manual(values=pal4)+
+#         # scale_y_reverse(limits=c(90,20))+
+#         coord_flip()+
+#         labs(y="Change in Distance from Shore (km)",x="Latitude")+
+#         theme(panel.background = element_rect(fill=NA,color='black'))
+#   }
+# 
+#   p
+# }
+```

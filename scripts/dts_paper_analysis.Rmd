@@ -86,11 +86,11 @@ ls_models <- read_rds(here::here('model output','dts paper','longspine thornyhea
 ```
 
 IPSL
-```{r}
-dover_ens_ipsl <- ensemble_predictions(dover_models,gcm='ipsl')
-sable_ens_ipsl <- ensemble_predictions(sable_models,gcm='ipsl')
-ss_ens_ipsl <- ensemble_predictions(ss_models,gcm="ipsl")
-ls_ens_ipsl <- ensemble_predictions(ls_models,gcm='ipsl')
+```{r,eval=F}
+dover_ens_ipsl <- ensemble_predictions(dover_models,gcm='ipsl',nsims=100)
+sable_ens_ipsl <- ensemble_predictions(sable_models,gcm='ipsl',nsims=100)
+ss_ens_ipsl <- ensemble_predictions(ss_models,gcm="ipsl",nsims=100)
+ls_ens_ipsl <- ensemble_predictions(ls_models,gcm='ipsl',nsims=100)
 
 write_rds(dover_ens_ipsl,here('model output','dts paper','dover_ensemble_preds_ipsl.rds'))
 write_rds(sable_ens_ipsl,here('model output','dts paper','sable_ensemble_preds_ipsl.rds'))
@@ -99,11 +99,11 @@ write_rds(ls_ens_ipsl,here('model output','dts paper','ls_ensemble_preds_ipsl.rd
 ```
 
 GFDL
-```{r}
-dover_ens_gfdl <- ensemble_predictions(dover_models,gcm='gfdl')
-sable_ens_gfdl <- ensemble_predictions(sable_models,gcm='gfdl')
-ss_ens_gfdl <- ensemble_predictions(ss_models,gcm="gfdl")
-ls_ens_gfdl <- ensemble_predictions(ls_models,gcm='gfdl')
+```{r,eval=F}
+dover_ens_gfdl <- ensemble_predictions(dover_models,gcm='gfdl',nsims=100)
+sable_ens_gfdl <- ensemble_predictions(sable_models,gcm='gfdl',nsims=100)
+ss_ens_gfdl <- ensemble_predictions(ss_models,gcm="gfdl",nsims=100)
+ls_ens_gfdl <- ensemble_predictions(ls_models,gcm='gfdl',nsims=100)
 
 write_rds(dover_ens_gfdl,here('model output','dts paper','dover_ensemble_preds_gfdl.rds'))
 write_rds(sable_ens_gfdl,here('model output','dts paper','sable_ensemble_preds_gfdl.rds'))
@@ -112,11 +112,11 @@ write_rds(ls_ens_gfdl,here('model output','dts paper','ls_ensemble_preds_gfdl.rd
 ```
 
 Hadley
-```{r}
-dover_ens_hadl <- ensemble_predictions(dover_models,gcm='hadl')
-sable_ens_hadl <- ensemble_predictions(sable_models,gcm='hadl')
-ss_ens_hadl <- ensemble_predictions(ss_models,gcm="hadl")
-ls_ens_hadl <- ensemble_predictions(ls_models,gcm='hadl')
+```{r,eval=F}
+dover_ens_hadl <- ensemble_predictions(dover_models,gcm='hadl',nsims=100)
+sable_ens_hadl <- ensemble_predictions(sable_models,gcm='hadl',nsims=100)
+ss_ens_hadl <- ensemble_predictions(ss_models,gcm="hadl",nsims=100)
+ls_ens_hadl <- ensemble_predictions(ls_models,gcm='hadl',nsims=100)
 
 write_rds(dover_ens_hadl,here('model output','dts paper','dover_ensemble_preds_hadl.rds'))
 write_rds(sable_ens_hadl,here('model output','dts paper','sable_ensemble_preds_hadl.rds'))
@@ -126,7 +126,425 @@ write_rds(ls_ens_hadl,here('model output','dts paper','ls_ensemble_preds_hadl.rd
 
 ### Join 3 ESM Predictions
 
-```{r}
+```{r,eval=F}
+dover_ens_sims <-list(dover_ens_gfdl,dover_ens_ipsl,dover_ens_hadl) %>% bind_rows() %>% 
+    dplyr::select(-esm) %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m) %>%
+    nest() %>% 
+    ungroup() %>% 
+    mutate(data=purrr::map(data,function(x)as.numeric(as.matrix(x))),
+           species='dover')
 
+sable_ens_sims <-list(sable_ens_gfdl,sable_ens_ipsl,sable_ens_hadl) %>% bind_rows() %>% 
+    dplyr::select(-esm) %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m) %>%
+    nest() %>% 
+    ungroup() %>% 
+    mutate(data=purrr::map(data,function(x)as.numeric(as.matrix(x))),
+           species='sable')
+
+ss_ens_sims <-list(ss_ens_gfdl,ss_ens_ipsl,ss_ens_hadl) %>% bind_rows() %>% 
+    dplyr::select(-esm) %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m) %>%
+    nest() %>% 
+    ungroup() %>% 
+    mutate(data=purrr::map(data,function(x)as.numeric(as.matrix(x))),
+           species='ss')
+
+ls_ens_sims <-list(ls_ens_gfdl,ls_ens_ipsl,ls_ens_hadl) %>% bind_rows() %>% 
+    dplyr::select(-esm) %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m) %>%
+    nest() %>% 
+    ungroup() %>% 
+    mutate(data=purrr::map(data,function(x)as.numeric(as.matrix(x))),
+           species='ls')
+
+write_rds(sable_ens_sims,here('model output','dts paper','sable_ensemble_all_sims.rds'))
+write_rds(dover_ens_sims,here('model output','dts paper','dover_ensemble_all_sims.rds'))
+write_rds(ss_ens_sims,here('model output','dts paper','ss_ensemble_all_sims.rds'))
+write_rds(ls_ens_sims,here('model output','dts paper','ls_ensemble_all_sims.rds'))
+```
+
+```{r,eval=F}
+dover_ens_all <- purrr::map_df(list(dover_ens_gfdl,dover_ens_ipsl,dover_ens_hadl),function(df){
+  df %>% pivot_longer(contains('sim'),names_to="sim",values_to="est")
+}) %>% 
+  group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
+  summarise(median_est=median(est),mean_est=mean(est),est5=quantile(est,0.05),est95=quantile(est,0.95)) %>% 
+  ungroup()
+
+sable_ens_all <- purrr::map_df(list(sable_ens_gfdl,sable_ens_ipsl,sable_ens_hadl),function(df){
+  df %>% pivot_longer(contains('sim'),names_to="sim",values_to="est")
+}) %>% 
+  group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
+  summarise(median_est=median(est),mean_est=mean(est),est5=quantile(est,0.05),est95=quantile(est,0.95)) %>% 
+  ungroup()
+
+ss_ens_all <- purrr::map_df(list(ss_ens_gfdl,ss_ens_ipsl,ss_ens_hadl),function(df){
+  df %>% pivot_longer(contains('sim'),names_to="sim",values_to="est")
+}) %>% 
+  group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
+  summarise(median_est=median(est),mean_est=mean(est),est5=quantile(est,0.05),est95=quantile(est,0.95)) %>% 
+  ungroup()
+
+ls_ens_all <- purrr::map_df(list(ls_ens_gfdl,ls_ens_ipsl,ls_ens_hadl),function(df){
+  df %>% pivot_longer(contains('sim'),names_to="sim",values_to="est")
+}) %>% 
+  group_by(year,longitude,latitude,lat,lon,depth_m) %>% 
+  summarise(median_est=median(est),mean_est=mean(est),est5=quantile(est,0.05),est95=quantile(est,0.95)) %>% 
+  ungroup()
+
+write_rds(sable_ens_all,here('model output','dts paper','sable_ensemble_preds_combined.rds'))
+write_rds(dover_ens_all,here('model output','dts paper','dover_ensemble_preds_combined.rds'))
+write_rds(ss_ens_all,here('model output','dts paper','ss_ensemble_preds_combined.rds'))
+write_rds(ls_ens_all,here('model output','dts paper','ls_ensemble_preds_combined.rds'))
+```
+
+Load
+
+```{r}
+dover_ens_all <- read_rds(here('model output','dts paper','dover_ensemble_preds_combined.rds')) %>% 
+  mutate(species='dover')
+  # rename(dover_median=median_est,dover_lower=est5,dover_upper=est95)
+sable_ens_all <- read_rds(here('model output','dts paper','sable_ensemble_preds_combined.rds'))%>% 
+  mutate(species='sable')
+  # rename(sable_median=median_est,sable_lower=est5,sable_upper=est95)
+ss_ens_all <- read_rds(here('model output','dts paper','ss_ensemble_preds_combined.rds'))%>% 
+  mutate(species='ss')
+  # rename(ss_median=median_est,ss_lower=est5,ss_upper=est95)
+ls_ens_all <- read_rds(here('model output','dts paper','ls_ensemble_preds_combined.rds'))%>% 
+  mutate(species='ls')
+  # rename(ls_median=median_est,ls_lower=est5,ls_upper=est95)
+
+# with sims
+dover_ens_sims <- read_rds(here('model output','dts paper','dover_ensemble_all_sims.rds'))
+sable_ens_sims <- read_rds(here('model output','dts paper','sable_ensemble_all_sims.rds'))
+ss_ens_sims <- read_rds(here('model output','dts paper','ss_ensemble_all_sims.rds'))
+ls_ens_sims <- read_rds(here('model output','dts paper','ls_ensemble_all_sims.rds'))
+```
+
+Join. We need the data in slightly different forms for different analyses
+
+```{r}
+# combined ensemble abundance
+four_spp <- list(dover_ens_all,sable_ens_all,ss_ens_all,ls_ens_all) %>% bind_rows() %>% 
+  # join roms data
+  left_join(roms,by = c("year", "longitude", "latitude", "lat", "lon"))
+
+four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>% bind_rows() %>% 
+  # add summary columns
+  mutate(mean_est=purrr::map_dbl(data,mean),
+         est5=purrr::map_dbl(data,quantile,probs=0.05),
+         est95=purrr::map_dbl(data,quantile,probs=0.95))
+
+four_spp_list <- list("dover"=bind_rows(dover_ens_ipsl,dover_ens_gfdl,dover_ens_hadl),
+                      "sable"=bind_rows(sable_ens_ipsl,sable_ens_gfdl,sable_ens_hadl),
+                      "ss"=bind_rows(ss_ens_ipsl,ss_ens_gfdl,ss_ens_hadl),
+                      "ls"=bind_rows(ls_ens_ipsl,ls_ens_gfdl,ls_ens_hadl))
+```
+
+### Calculate Center-of-Gravity
+
+```{r,eval=F}
+#ipsl
+dover_cog_ipsl <- make_cog(dover_models,gcm = 'ipsl',what="dat")
+sable_cog_ipsl <- make_cog(sable_models,gcm = 'ipsl',what="dat")
+ss_cog_ipsl <- make_cog(ss_models,gcm = 'ipsl',what="dat")
+ls_cog_ipsl <- make_cog(ls_models,gcm = 'ipsl',what="dat")
+
+write_rds(dover_cog,here('model output','dts paper','dover_cog_ipsl.rds'))
+write_rds(sable_cog,here('model output','dts paper','sable_cog_ipsl.rds'))
+write_rds(ss_cog,here('model output','dts paper','ss_cog_ipsl.rds'))
+write_rds(ls_cog,here('model output','dts paper','ls_cog_ipsl.rds'))
+```
+
+# Manuscript Figures
+
+## Figure 1
+
+Landings
+
+```{r}
+landings_plot <- v %>% 
+  group_by(Year,lab)%>% 
+  filter(Year>1979) %>% 
+  summarise(tot_dollars=sum(Dollars,na.rm=T)) %>% 
+  ggplot(aes(Year,tot_dollars/1e6,color=lab))+geom_line(size=1.5)+
+  labs(x="Year",y="Landings (Million $)",color="")+
+  # scale_x_continuous(breaks=seq(2010,2020,by=2))+
+  scale_color_manual(values=pal)+
+  scale_x_continuous(expand=c(0,2))+
+  theme(legend.position = c(0.15,0.8),
+        axis.text = element_text(size=10),
+        axis.title = element_text(size=12),
+        panel.border = element_rect(color='black',fill=NA))
+```
+
+Fishing footprints
+
+```{r}
+bbox=st_bbox(projection_extent)
+footprints_map <- ggplot()+
+  geom_sf(data=footprints,aes(fill=port_name),alpha=0.5)+
+  geom_sf(data=coast,fill='gray80')+
+  # geom_sf(data=isobaths,col='gray20')+
+  geom_sf(data=port_coords,aes(color=port_name),size=3)+
+  scale_fill_npg()+
+  scale_color_npg()+
+  guides(color='none')+
+  # guides(color="none",fill='none')+
+  coord_sf(datum=NA)+
+  labs(fill="Port")+
+  xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+  theme(
+        legend.text=element_text(size=8),
+        legend.background = element_rect(fill='white',color='black'),
+        legend.position=c(0.6,0.6))
+```
+
+Overlap map (count number of species in each cell). This figure shows the number of species out of four in each grid cell that are at or above their median CPUE (across all cells) for that year.
+
+```{r,fig.width=6,fig.height=8}
+
+multimapdiff <- map_multispp_diff(four_spp,qlower=0.75,qupper=1)
+
+```
+
+Finish Figure 1
+
+```{r}
+row2 <- plot_grid(footprints_map,multimapdiff,labels=c('b','c'),nrow=1,rel_widths = c(0.8,1))
+multimapcomp <- plot_grid(landings_plot,row2,nrow=2,rel_heights = c(0.3,0.7),labels='auto')
+# multimapcomp
+
+ggsave(here('model output','dts paper','fig1.png'),multimapcomp,w=6,h=8)
+```
+
+## Figure 2
+
+Weighted distance from shore
+```{r}
+fourspp_reldist <- purrr::map(four_spp_list,calc_rel_dist_to_shore)
+fourspp_reldist <- bind_rows(fourspp_reldist,.id='species')
+
+#historical average
+fourspp_reldist_hist <- fourspp_reldist %>% 
+  filter(year %in% c(1985:2010)) %>% 
+  group_by(species,lat,sim) %>% 
+  summarise(mean_dist_hist=mean(dist)) %>% 
+  ungroup()
+
+# end of century
+fourspp_reldist_fut <- fourspp_reldist %>% 
+  filter(year %in% c(2075:2100)) %>% 
+  group_by(species,lat,sim) %>% 
+  summarise(mean_dist_fut=mean(dist)) %>% 
+  ungroup()
+
+# bind again
+fourspp_reldist_change <- fourspp_reldist_hist %>% 
+  left_join(fourspp_reldist_fut,by=c('species','lat','sim')) %>%
+  mutate(change=mean_dist_fut-mean_dist_hist)
+  # group_by(species,lat) %>% 
+  # summarise(meanchange=mean(change),
+  #           change5=quantile(change,0.05),
+  #           change95=quantile(change,0.95))
+```
+
+Make the plot
+
+```{r}
+# four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
+#     mutate(spp_plotting=case_when(
+#       species=='dover' ~ "Dover Sole",
+#       species=="ls" ~ "Longspine",
+#       species=="ss"~"Shortspine",
+#       species=="sable" ~"Sablefish"
+#     )) %>% 
+#     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+#   ggplot(aes(x=lat,y=meanchange,ymin=change5,ymax=change95,fill=spp_plotting,col=spp_plotting))+
+#   geom_ribbon(alpha=0.2,linetype=3)+
+#   geom_line(size=1)+
+#   geom_hline(yintercept=0,linetype=2)+
+#   # ylim(-6,25)+
+#   scale_color_manual(values=pal4)+
+#   scale_fill_manual(values=pal4)+
+#   # scale_y_reverse(limits=c(90,20))+
+#   coord_flip()+
+#   # theme(legend.position = c(0.8,0.7))+
+#   labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species",fill="Species")+
+#   theme(panel.background = element_rect(fill=NA,color='black'))
+four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls" ~ "Longspine",
+      species=="ss"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  ggplot(aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting))+
+  geom_point(alpha=0.2,size=0.7)+
+  geom_hline(yintercept=0,linetype=2)+
+  geom_smooth()+
+  scale_color_manual(values=pal4)+
+  scale_fill_manual(values=pal4)+
+  # scale_y_reverse(limits=c(90,20))+
+  coord_flip()+
+  # theme(legend.position = c(0.8,0.7))+
+  labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species",fill="Species")+
+  theme(panel.background = element_rect(fill=NA,color='black'))
+
+four_spp_dist_to_shore_change
+ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist_to_shore_change,w=6,h=6)
+```
+
+Depth change
+
+```{r}
+fourspp_depth <- plot_depth_distribution2(four_spp_sims,start_year = 2020,end_year=2100)+theme(panel.background = element_rect(fill=NA,color='black'))+theme(legend.position = 'bottom')
+fourspp_depth
+ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth,w=6,h=4)
+```
+
+
+```{r,fig.width=7,fig.height=5}
+leg <- get_legend(fourspp_depth)
+fig_dist_depth_change<-plot_grid(four_spp_dist+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
+                                 fourspp_depth + guides(color='none',fill='none') + theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
+                                 nrow=1,labels='auto')
+fig_dist_depth_change<-ggdraw()+
+  draw_plot(fig_dist_depth_change)+
+  draw_plot(leg,y=-0.45)
+
+ggsave(here('model output','dts paper','fig_dist_depth_change.png'),fig_dist_depth_change,w=8,h=5)
+```
+
+## Figure 3
+
+Environmental state space within fishing footprints
+
+```{r}
+roms_env_space <- roms %>% 
+  dplyr::select(year,lat,lon,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+  distinct() %>% 
+  left_join(roms_ll,by=c('lon','lat')) %>% 
+  drop_na() %>% 
+  rename(t=mean_bt_30d_ipsl,oxy=mean_oxy_bottom_30d_ipsl) %>% 
+  mutate(depth_bin=cut(depth_m,breaks=c(0,-100,-250,-500,-1000,-3000),
+                       labels=c("1000-3000m","500-1000m","250-500m","100-250m","0-100m")),
+         lat_bin=cut(lat,breaks=c(30,33,36,39,42,45,48),labels=c("30-33","33-36","36-39","39-42","42-45","45-48")))
+roms_env_space_hist <- roms_env_space %>%
+  # historical "mean" is 1985-2010
+  filter(year%in%c(1985:2010)) %>%
+  group_by(lat,lon,roms_cell,depth_m,depth_bin,lat_bin) %>% 
+  summarise(t_hist=mean(t,na.rm=T),oxy_hist=mean(oxy,na.rm=T)) %>% 
+  ungroup()
+
+roms_env_space_fut <- roms_env_space %>%
+  # historical "mean" is 1985-2010
+  filter(year%in%c(2075:2100)) %>%
+  group_by(lat,lon,roms_cell,depth_m,depth_bin,lat_bin) %>% 
+  summarise(t_fut=mean(t,na.rm=T),oxy_fut=mean(oxy,na.rm=T)) %>% 
+  ungroup()
+
+roms_env_space_sf <- roms_env_space_hist %>% 
+  left_join(roms_env_space_fut, c("lat", "lon", "roms_cell", "depth_m", "depth_bin", "lat_bin")) %>%
+  st_as_sf(coords=c('lon','lat'),crs=4326) %>% 
+  st_transform(st_crs(footprints)) %>% 
+  st_join(footprints)
+
+footprint_env_space <- roms_env_space_sf %>% 
+  drop_na() %>% 
+  group_by(port_name,port_group) %>% 
+  summarise(mean_t_hist=mean(t_hist),mean_oxy_hist=mean(oxy_hist),
+            mean_t_fut=mean(t_fut),mean_oxy_fut=mean(oxy_fut)) %>% 
+  ungroup()
+```
+
+Make environmental affinities ellipses
+
+```{r}
+library(ggnewscale)
+aff_polys<-affinities_ellipses(four_spp,yr_vec=1985:2010,concavity=7,threshold=0.25)
+# plotting order for colors
+polys_and_footprints <- ggplot()+
+  geom_polygon(data=aff_polys,aes(V1,V2,col=spp_plotting),fill=NA,size=1,linetype=3)+
+  scale_color_manual(values=c(pal4),name="Top 75% of\nspecies' CPUE")+
+  new_scale_color()+
+  geom_segment(data=footprint_env_space,aes(x=mean_t_hist,y=mean_oxy_hist,xend=mean_t_fut,yend=mean_oxy_fut,
+             col=port_name),size=1,linetype=1,arrow=ggplot2::arrow(type="open",length=unit(0.1,'inches')))+
+  scale_color_npg(name="Port Group\nClimate")+
+  labs(x="Bottom Temperature (deg C)",y="Bottom Oxygen (mmol/m3)")+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.border = element_rect(color='black',fill=NA),
+        axis.text=element_text(size=12))
+```
+
+```{r,fig.width=8,fig.height=8}
+# attach dumbbell plots
+footprint_db_temp_plot2 <- footprint_env_space %>% 
+  ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=port_name))+
+  geom_dumbbell(color="#FCAE91",colour_x =NA,colour_xend = "#A50F15",
+                size=1,size_x=3,size_xend = 3) +
+  labs(x="Temperature",y="")+
+  coord_flip()+
+  theme(panel.border = element_rect(color='black',fill=NA),
+        axis.text.x=element_text(color=pal_npg()(6),size=10))
+
+footprint_db_oxy_plot2 <- footprint_env_space %>% 
+  ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=port_name))+
+  geom_dumbbell(color="#a3c4dc",colour_x =NA,colour_xend = "#0e668b",
+                size=1,size_x=3,size_xend = 3) +
+  labs(x="Oxygen",y="")+
+  coord_flip()+
+  theme(axis.text.x = element_blank(),panel.border = element_rect(color='black',fill=NA))
+
+fig3 <- plot_grid(footprint_db_temp_plot2,footprint_db_oxy_plot2,polys_and_footprints,labels='auto',nrow=3,
+                  hjust = 0,vjust=1,
+                  rel_heights = c(0.2,0.2,0.6))
+fig3
+ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,h=8,w=8)
+```
+
+## Figure 4
+
+```{r}
+```{r}
+ens_est_overlaps <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth_m, ens_est)) %>% 
+  # join all the data and cogs nested by year
+  left_join(sable_ens %>% nest(sable = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
+  left_join(ss_ens %>% nest(ss = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
+  left_join(ls_ens %>% nest(ls = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
+  left_join(dover_cog %>% nest(dover_cog=c(w.est_x,w.est_y)),by = "year")%>% 
+  left_join(sable_cog %>% nest(sable_cog=c(w.est_x,w.est_y)),by = "year")%>% 
+  left_join(ss_cog %>% nest(ss_cog=c(w.est_x,w.est_y)),by = "year") %>%  
+  left_join(ls_cog %>% nest(ls_cog=c(w.est_x,w.est_y)),by = "year") %>% 
+  
+  # calculate the gic
+  mutate(dover_sable_gic=purrr::pmap_dbl(list(dat1=dover,dat2=sable,cog1=dover_cog,cog2=sable_cog),gic)) %>%
+  mutate(dover_ss_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ss,cog1=dover_cog,cog2=ss_cog),gic)) %>% 
+  mutate(dover_ls_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ls,cog1=dover_cog,cog2=ls_cog),gic)) %>% 
+  mutate(sable_ss_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ss,cog1=sable_cog,cog2=ss_cog),gic)) %>% 
+  mutate(sable_ls_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ls,cog1=sable_cog,cog2=ls_cog),gic)) %>% 
+  mutate(ss_ls_gic=purrr::pmap_dbl(list(dat1=ss,dat2=ls,cog1=ss_cog,cog2=ls_cog),gic)) %>% 
+  
+  # calculate Schoener's D
+  mutate(dover_sable_sch=purrr::pmap_dbl(list(dat1=dover,dat2=sable),schoeners)) %>% 
+  mutate(dover_ss_sch=purrr::pmap_dbl(list(dat1=dover,dat2=ss),schoeners)) %>% 
+  mutate(dover_ls_sch=purrr::pmap_dbl(list(dat1=dover,dat2=ls),schoeners)) %>% 
+  mutate(sable_ss_sch=purrr::pmap_dbl(list(dat1=sable,dat2=ss),schoeners)) %>% 
+  mutate(sable_ls_sch=purrr::pmap_dbl(list(dat1=sable,dat2=ls),schoeners)) %>% 
+  mutate(ss_ls_sch=purrr::pmap_dbl(list(dat1=ss,dat2=ls),schoeners)) %>% 
+  
+  # calculate local colocation
+  mutate(dover_sable_loc=purrr::pmap_dbl(list(dat1=dover,dat2=sable),lic)) %>% 
+  mutate(dover_ss_loc=purrr::pmap_dbl(list(dat1=dover,dat2=ss),lic)) %>% 
+  mutate(dover_ls_loc=purrr::pmap_dbl(list(dat1=dover,dat2=ls),lic)) %>%
+  mutate(sable_ss_loc=purrr::pmap_dbl(list(dat1=sable,dat2=ss),lic)) %>%  
+  mutate(sable_ls_loc=purrr::pmap_dbl(list(dat1=sable,dat2=ls),lic)) %>% 
+  mutate(ss_ls_loc=purrr::pmap_dbl(list(dat1=ss,dat2=ls),lic))
+
+```
 ```
 
