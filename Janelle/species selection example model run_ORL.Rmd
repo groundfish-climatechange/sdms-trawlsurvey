@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # load packages
 ```{r}
 library(tidyverse)
-library(vista)
+library(vista) 
 library(mgcv)
 ```
 
