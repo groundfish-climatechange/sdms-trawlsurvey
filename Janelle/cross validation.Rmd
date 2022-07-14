@@ -38,24 +38,20 @@ prepare_species <- function(dat,spp){
 ```
 
 ```{r}
-run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_field=T,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
+run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_field=T,include_substrate=F,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
-  
   # make spde
-  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
+  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'),
                    cutoff = 20)
-  
   # model formula
   formula <- paste0("cpue_kg_km2 ~ ")
-  
   # substrate relationship
   substrate <- paste("prop_hard_mixed + I(prop_hard_mixed^2)")
   #wiggly habitat relationship?
   substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
                       substrate)
   if(!include_substrate) substrate=""
-  
   # make the environmental effects
   enviro <- paste("mean_temp_roms_30_norm + I(mean_temp_roms_30_norm^2) + mean_oxygen_roms_30_norm + I(mean_oxygen_roms_30_norm^2)")
   # wiggly environmental relationships?
@@ -66,27 +62,23 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_fie
   if(use_depth) {
     formula = paste0(formula, " + depth_trawl_norm + I(depth_trawl_norm^2)")
   }
-  
   time_formula = "~ -1"
   if(time_vary) {
     time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
     time_varying = as.formula(time_formula)
     time = "year"
   } else {
-    formula = paste0(formula, substrate, " + ", enviro)
+    formula = paste0(formula, " + ", substrate, " + ", enviro)
     time_varying = NULL
     time = "year"
   }
-  
   # fit model. EW commented out quadratic roots, since those are still experimental and won't work for all spp. Also turned
   set.seed(41389) # for reproducibility
   test_set = sample(1:nrow(modeldat), size = round(0.1*nrow(modeldat)), replace=FALSE)
   modeldat$fold = 1
-  modeldat$fold[test_set] = 2 
-  
+  modeldat$fold[test_set] = 2
   print('running 2-fold CV.')
-  
-  m_cv <- try( sdmTMB_cv( 
+  m_cv <- try( sdmTMB_cv(
     formula = as.formula(formula),
     k_folds=2,
     parallel = TRUE,
@@ -108,10 +100,10 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_fie
   } else{
     # tem <- m_cv %>% pluck('data')
     # print(paste('data is class',class(tem)))
-    total_pred_ll = m_cv %>% 
-      pluck('data') %>% 
-      dplyr::filter(cv_fold==2) %>% 
-      pluck('cv_loglik') %>% 
+    total_pred_ll = m_cv %>%
+      pluck('data') %>%
+      dplyr::filter(cv_fold==2) %>%
+      pluck('cv_loglik') %>%
       sum()
     if(return_what=='model') return(m_cv)
     else return(total_pred_ll)
@@ -122,7 +114,7 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_fie
 ## Choose a species
 
 ```{r}
-spp <- "longnose skate"
+spp <- "sablefish"
 
 spp_dat <- prepare_species(trawl_roms_utm,spp)
 
@@ -131,6 +123,6 @@ spp_dat <- prepare_species(trawl_roms_utm,spp)
 # Model output
 
 ```{r}
-m <- run_sdmTMB_cv(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,env_spline=T,include_substrate=T)
+m <- run_sdmTMB_cv(dat=trawl_roms_utm,spp="sablefish",use_depth=T,env_spline=T,include_substrate=F)
 summary(m)
 ```
