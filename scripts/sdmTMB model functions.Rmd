@@ -313,6 +313,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
     ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
+    mutate(depth_m= -depth_m) %>%  # THIS IS VERY IMPORTANT FOR MODELS THAT INCLUDE DEPTH
     dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
   
   temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
@@ -345,7 +346,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
 
 ## Ensemble Predictions
 
-To create ensemble predictions, we calculate predictions for each species' model separately, then weight them using the weights established in model fitting (i.e., from `sdmTMB_stacking`). This function takes as input the dataframe result of the `model_species` function above, then makes ensemble predictions using the projections from an ESM of choice (Hadley, GFDL, or IPSL). Returns a dataframe of predicted log CPUE.
+To create ensemble predictions, we calculate predictions for each species' model separately, then weight them using the weights established in model fitting (i.e., from `sdmTMB_stacking`). This function takes as input the dataframe result of the `model_species` function above, then makes ensemble predictions using the projections from an ESM of choice (Hadley, GFDL, or IPSL). Returns a dataframe of predicted log CPUE. Importantly, right now this function only handles models that were fit with temperature and oxygen data (and, optionally, spatial random effects), but NOT depth or substrate data.
 
 ```{r}
 # this function is meant to be run with a list of models that all are fit on the same data, with a common set of predictors
@@ -759,8 +760,6 @@ plot_depth_distribution <- function(ens_preds,name="",start_year=2020,end_year=2
 
 Option 2: Fraction of estimated CPUE that is deeper than 700 fathoms (~1280m)
 ```{r}
-pal4 <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
-
 plot_depth_distribution2 <- function(multisims_df,start_year=2020,end_year=2100){
   y <- multisims_df %>% 
     mutate(spp_plotting=case_when(
@@ -1492,6 +1491,24 @@ calc_rel_dist_to_shore <- function(sims_df){
     summarise(across(contains("sim"),function(x) sum(exp(x)/sum(exp(x))*km_to_coast))) %>% 
     ungroup() %>% 
     pivot_longer(contains('sim'),names_to='sim',values_to='dist')
+}
+```
+
+## Depth Change
+
+```{r}
+calc_depth_frac <- function(sims_df,start_year=2020,end_year=2100){
+  
+  d <- sims_df %>% 
+    filter(year>=start_year,year<=end_year) %>%
+    rename(depth=depth_m) %>% 
+    mutate(is_deep=depth < -1280) %>% 
+    mutate(across(contains('sim'),exp)) %>% 
+    group_by(esm,year) %>% 
+    summarise(across(contains('sim'),function(x)sum(x[!is_deep]/sum(x)))) %>%
+    ungroup() %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='frac')
+  
 }
 ```
 
