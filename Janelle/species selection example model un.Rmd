@@ -38,7 +38,7 @@ prepare_species <- function(dat,spp){
 ```
 
 ```{r}
-run_sdmTMB <- function(dat,spp,use_depth=T,time_vary=F,spatial_field=T,include_substrate=F,hab_spline=F,env_spline=F,spline_k=3){
+run_sdmTMB <- function(dat,spp,use_depth=T,time_vary=F,spatial_field=F,include_substrate=T,hab_spline=F,env_spline=F,spline_k=3){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   
@@ -128,7 +128,7 @@ run_sdmTMB <- function(dat,spp,use_depth=T,time_vary=F,spatial_field=T,include_s
 ## Choose a species
 
 ```{r}
-spp <- "greenstripedrockfish"
+spp <- "big skate"
 
 spp_dat <- prepare_species(trawl_roms_utm,spp)
 
@@ -137,7 +137,7 @@ spp_dat <- prepare_species(trawl_roms_utm,spp)
 # Model output
 
 ```{r}
-m <- run_sdmTMB(dat=trawl_roms_utm,spp="greenstriped rockfish",use_depth=T,env_spline=T,include_substrate=F)
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="big skate",use_depth=T,env_spline=T,include_substrate=T)
 summary(m)
 ```
 
@@ -148,7 +148,7 @@ resids <- residuals(m)[1:nrow(spp_dat),1]
 qqnorm(resids)
 qqline(resids)
 spp_dat$resid=resids
-dev.copy(jpeg,'greendepth_qq.jpg', width=5, height=5, units='in', res=300)
+dev.copy(jpeg,'bigskate1_qq.jpg', width=5, height=5, units='in', res=300)
 dev.off()
 ```
 # Spatial Predictions
@@ -162,7 +162,7 @@ preds_time_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year') +
 
 preds_time_space
 
-dev.copy(jpeg,'greendepth_timespace.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'bigskate1_timespace.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 ```
 
@@ -173,7 +173,7 @@ preds_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year',by_time
 preds_space
 
 
-dev.copy(jpeg,'pred_greenfishdepth_space.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'pred_bigskate1_space.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 ```
 
@@ -185,7 +185,7 @@ resids_space <- resid_space(spp_dat,X='longitude',Y='latitude',time='year')
 resids_space
 
 
-dev.copy(jpeg,'greendepth_residspace.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'bigskate1_residspace.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 ```
 
@@ -208,6 +208,7 @@ make_predictions <- function(modelobj,gcm="hadl"){
     ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
+    mutate(depth_m= -depth_m) %>%
     dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
   
   temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
@@ -288,8 +289,8 @@ map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
 
 
 ```{r}
-map_year(preds,yr_vec = 2100)
-dev.copy(jpeg,'greendepth_annualmap2100.jpg', width=5, height=5, units='in', res=300)
+map_year(preds,yr_vec = 2025)
+dev.copy(jpeg,'bigskate1_annualmap2025.jpg', width=5, height=5, units='in', res=300)
 dev.off()
 ```
 
@@ -321,7 +322,7 @@ make_comparison_map <- function(model_ens,yr=2050){
 
 ```{r}
 make_comparison_map(preds, yr = 2025:2100)
-dev.copy(jpeg,'sablefishdepth_diffmap20252100.jpg', width=5, height=5, units='in', res=300)
+dev.copy(jpeg,'longnoseskate1_diffmap20252100.jpg', width=5, height=5, units='in', res=300)
 dev.off()
 
 ```
