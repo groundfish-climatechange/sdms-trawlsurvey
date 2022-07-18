@@ -327,3 +327,139 @@ dev.off()
 
 ```
 
+## Environmental Relationships
+
+We can take advantage of the `visreg` package to look at the environmental response. We want to pull the data from it to back-transform the predictors into their original scale
+```{r}
+library(visreg)
+
+plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
+  
+  # use visreg to do the fit for us
+  x <- visreg(fit=fit,xvar=predvar,scale='response',plot=FALSE)
+  datfit <- x$fit
+  
+  # if the response is not substrate, have to back-transform the predictor variable
+  if(predvar=="prop_hard_mixed"){
+    out = datfit %>% 
+      ggplot(aes(prop_hard_mixed,visregFit,ymax=visregUpr,ymin=visregLwr))+
+      geom_ribbon(fill='gray70')+
+      geom_line()+
+      labs(x=predvar,y="CPUE")+
+      theme(panel.border = element_rect(color='black',fill=NA))
+    
+  } else {
+      # find the mean and SD of the original predictor to back-transform
+      original_predvar = str_sub(predvar,end=-6L)
+      
+      predvar_dat=fit$data %>% dplyr::select(all_of(original_predvar)) %>% pluck(1)
+      mean_predvar <- mean(predvar_dat,na.rm=T)
+      sd_predvar <- sd(predvar_dat,na.rm=T)
+      predvar_trans <- (datfit %>% pluck(predvar))*sd_predvar+mean_predvar
+      
+      # add the transformation to the fitted relationship
+      datfit <- datfit %>% 
+        mutate(envtrans=predvar_trans)
+      
+      # output plot
+      out = datfit %>% 
+        ggplot(aes(envtrans,visregFit,ymax=visregUpr,ymin=visregLwr))+
+        geom_ribbon(fill='gray70')+
+        geom_line()+
+        labs(x=original_predvar,y="CPUE")+
+        theme(panel.border = element_rect(color='black',fill=NA))
+  }
+  
+  out
+
+}
+
+```
+
+Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as conditional responses of CPUE to the given variable, conditional on the other variables being held at their median values.
+
+```{r}
+depth_relationship <- plot_single_env_relationship(m,predvar="depth_trawl_norm")
+oxy_relationship <- plot_single_env_relationship(m,predvar="mean_oxygen_roms_30_norm")
+temp_relationship <- plot_single_env_relationship(m,predvar="mean_temp_roms_30_norm")
+hab_relationship <- plot_single_env_relationship(m,predvar="prop_hard_mixed")
+
+cowplot::plot_grid(depth_relationship,oxy_relationship,temp_relationship,hab_relationship,nrow=2)
+```
+
+
+```{r}
+make_env <- function(modelobj){
+  
+  df <- modelobj$data
+  f <- modelobj$formula %>% as.character() %>% pluck(3)
+  
+  # get means for normalization
+  meanhab <- mean(df$prop_hard_mixed)
+  meant <- mean(df$mean_temp_roms_30_norm)
+  meano <- mean(df$mean_oxygen_roms_30_norm)
+  meanlat <- mean(df$latitude)
+  meanlon <- mean(df$longitude)
+  
+  if(grepl('prop_hard_mixed',f)){
+    habdf <- tibble(prop_hard_mixed=seq(0,1,length.out=100),year=2000, mean_temp_roms_30_norm=meant, mean_oxygen_roms_30_norm=meano,longitude=meanlon,latitude=meanlat)
+    
+    phab <- predict(modelobj,newdata=habdf,se_fit=T)
+    
+    habplot <- ggplot(phab,aes(prop_hard_mixed,exp(est),ymin=exp(est-1.96*est_se), ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
+      labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")
+    
+  } else{habplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
+      labs(title="Habitat",x="Prop Hard Bottom",y="CPUE")}
+  
+  
+  if(grepl('mean_temp',f)){
+    
+    tdf <- tibble(mean_temp_roms_30_norm=seq(min(df$mean_temp_roms_30_norm)+0.2,max(df$mean_temp_roms_30_norm)-0.2,length.out=100),year=2000,prop_hard_mixed=meanhab,mean_oxygen_roms_30_norm=meano,longitude=meanlon,latitude=meanlat)
+    
+    pt <- predict(modelobj,newdata=tdf,se_fit=T)
+    
+    # rescale for plotting (un-normalize)
+    pt <- pt %>% mutate(t=mean_temp_roms_30_norm*sd(df$mean_temp_roms_30,na.rm=T)+mean(df$mean_temp_roms_30,na.rm=T))
+    
+    tplot <- ggplot(pt,aes(t,exp(est),ymin=exp(est-1.96*est_se),ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
+      labs(title="Temperature",x="Temperature",y="CPUE")
+  }else{tplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + geom_blank()+
+      labs(title="Temperature",x="Temperature",y="CPUE")}
+  
+  
+  if(grepl('mean_oxygen',f)){
+    odf <- tibble(mean_oxygen_roms_30_norm=seq(min(df$mean_oxygen_roms_30_norm)+0.2,max(df$mean_oxygen_roms_30_norm)-0.2,length.out=100),year=2000,prop_hard_mixed=meanhab,mean_temp_roms_30_norm=meant,longitude=meanlon,latitude=meanlat)
+    
+    po <- predict(modelobj,newdata=odf,se_fit=T)
+    
+    # rescale for plotting (un-normalize)
+    po <- po %>% mutate(o=mean_oxygen_roms_30_norm*sd(df$mean_oxygen_roms_30,na.rm=T)+mean(df$mean_oxygen_roms_30,na.rm=T))
+    
+    oplot <- ggplot(po,aes(o,exp(est),ymin=exp(est-1.96*est_se),ymax=exp(est+1.96*est_se)))+
+      geom_line()+
+      geom_ribbon(alpha=0.5)+
+      labs(title="Oxygen",x="Oxygen (mmol/m3)",y="CPUE")
+    
+  }else{
+    oplot <- ggplot(df %>% slice(1:100),aes(prop_hard_mixed, cpue_kg_km2)) + 
+      geom_blank()+
+      labs(title="Oxygen",x="Oxygen (mmol/m3)",y="CPUE")}
+  
+  out <- plot_grid(habplot,tplot,oplot,nrow=1)
+  
+  # add text for model formula
+  ftext <- f %>% str_replace_all("prop_hard_mixed","habitat") %>% 
+    str_replace_all("mean_temp_roms_30_norm","temperature") %>% 
+    str_replace_all("mean_oxygen_roms_30_norm","oxygen")
+  
+  formulagg <- ggdraw() +
+    draw_label(paste('CPUE ~',ftext),size = 8)
+  plot_grid(out,formulagg,ncol=1,rel_heights = c(1,0.2))+plot_theme
+}
+```
+
