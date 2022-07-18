@@ -43,6 +43,7 @@ plot_theme <-   theme_minimal()+
         panel.grid.major = element_line(color="gray50",linetype=3))
 theme_set(plot_theme)
 pal <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
+pal4 <- viridis_pal(option="A",begin=0.2,end=0.8)(4)
 pal6 <- viridis_pal(option="C",begin=0.2,end=0.8)(6)
 pal6_2 <- viridis_pal(option="B",begin=0.2,end=0.8)(6)
 ```
@@ -78,7 +79,7 @@ for(i in 1:length(spp_to_model)){
 
 We project across all 3 ESMs, weighting each equally
 
-```{r,eval=F}
+```{r,eval=T}
 dover_models <- read_rds(here::here('model output','dts paper','dover sole models.rds'))
 sable_models <- read_rds(here::here('model output','dts paper','sablefish models.rds'))
 ss_models <- read_rds(here::here('model output','dts paper','shortspine thornyhead models.rds'))
@@ -200,9 +201,23 @@ write_rds(ss_ens_all,here('model output','dts paper','ss_ensemble_preds_combined
 write_rds(ls_ens_all,here('model output','dts paper','ls_ensemble_preds_combined.rds'))
 ```
 
-Load
+### Load
 
 ```{r}
+# separate projections, with sims
+dover_ens_separate <- list.files(here('model output','dts paper'),full.names = T) %>% str_subset('dover_ensemble_preds') %>% 
+  str_subset("combined",negate=T) %>% map_df(read_rds)
+sable_ens_separate <- list.files(here('model output','dts paper'),full.names = T) %>%
+  str_subset('sable_ensemble_preds') %>% 
+  str_subset("combined",negate=T) %>% map_df(read_rds)
+ss_ens_separate <- list.files(here('model output','dts paper'),full.names = T) %>%
+  str_subset('ss_ensemble_preds') %>% 
+  str_subset("combined",negate=T) %>% map_df(read_rds)
+ls_ens_separate <- list.files(here('model output','dts paper'),full.names = T) %>%
+  str_subset('ls_ensemble_preds') %>% 
+  str_subset("combined",negate=T) %>% map_df(read_rds)
+
+# combined across ESMs
 dover_ens_all <- read_rds(here('model output','dts paper','dover_ensemble_preds_combined.rds')) %>% 
   mutate(species='dover')
   # rename(dover_median=median_est,dover_lower=est5,dover_upper=est95)
@@ -226,21 +241,24 @@ ls_ens_sims <- read_rds(here('model output','dts paper','ls_ensemble_all_sims.rd
 Join. We need the data in slightly different forms for different analyses
 
 ```{r}
+# separate ESMs
+four_spp_list <- list("dover"=dover_ens_separate,
+                      "sable"=sable_ens_separate,
+                      "ss"=ss_ens_separate,
+                      "ls"=ls_ens_separate)
 # combined ensemble abundance
 four_spp <- list(dover_ens_all,sable_ens_all,ss_ens_all,ls_ens_all) %>% bind_rows() %>% 
   # join roms data
   left_join(roms,by = c("year", "longitude", "latitude", "lat", "lon"))
 
+# with separate sims
 four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>% bind_rows() %>% 
   # add summary columns
   mutate(mean_est=purrr::map_dbl(data,mean),
          est5=purrr::map_dbl(data,quantile,probs=0.05),
          est95=purrr::map_dbl(data,quantile,probs=0.95))
 
-four_spp_list <- list("dover"=bind_rows(dover_ens_ipsl,dover_ens_gfdl,dover_ens_hadl),
-                      "sable"=bind_rows(sable_ens_ipsl,sable_ens_gfdl,sable_ens_hadl),
-                      "ss"=bind_rows(ss_ens_ipsl,ss_ens_gfdl,ss_ens_hadl),
-                      "ls"=bind_rows(ls_ens_ipsl,ls_ens_gfdl,ls_ens_hadl))
+
 ```
 
 ### Calculate Center-of-Gravity
@@ -401,16 +419,39 @@ ggsave(here('model output','dts paper','four species distance from shore.png'),f
 Depth change
 
 ```{r}
-fourspp_depth <- plot_depth_distribution2(four_spp_sims,start_year = 2020,end_year=2100)+theme(panel.background = element_rect(fill=NA,color='black'))+theme(legend.position = 'bottom')
-fourspp_depth
-ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth,w=6,h=4)
+fourspp_depth <- purrr::map(four_spp_list,calc_depth_frac,start_year=2020,end_year=2100) %>% bind_rows(.id='species')
+
+fourspp_depth_plot <- fourspp_depth %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls" ~ "Longspine",
+      species=="ss"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  ggplot(aes(x=year,y=frac,col=spp_plotting,fill=spp_plotting))+
+  geom_point(alpha=0.2,size=0.7)+
+  geom_smooth()+
+  scale_color_manual(values=pal4)+
+  scale_fill_manual(values=pal4)+
+  # scale_color_manual(values=c("#2271B2","#d55e00"))+
+  labs(x="Year",y="Proportion < 700 fathoms",title="",fill="Species",col="Species")+
+  theme(axis.text.x=element_text(size=10),
+        axis.text.y=element_text(size=10),
+        panel.background = element_rect(fill=NA,color='black'),
+        legend.position="bottom")
+fourspp_depth_plot
+```
+
+```{r}
+ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth_plot,w=6,h=4)
 ```
 
 
 ```{r,fig.width=7,fig.height=5}
-leg <- get_legend(fourspp_depth)
-fig_dist_depth_change<-plot_grid(four_spp_dist+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
-                                 fourspp_depth + guides(color='none',fill='none') + theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
+leg <- get_legend(fourspp_depth_plot)
+fig_dist_depth_change<-plot_grid(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm'))+guides(color='none',fill='none'),
+                                 fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
                                  nrow=1,labels='auto')
 fig_dist_depth_change<-ggdraw()+
   draw_plot(fig_dist_depth_change)+
