@@ -128,7 +128,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
 ## Choose a species
 
 ```{r}
-spp <- "pacific ocean perch"
+spp <- "chilipepper rockfish"
 
 spp_dat <- prepare_species(trawl_roms_utm,spp)
 
@@ -137,7 +137,7 @@ spp_dat <- prepare_species(trawl_roms_utm,spp)
 # Model output
 
 ```{r}
-m <- run_sdmTMB(dat=trawl_roms_utm,spp="pacific ocean perch",use_depth=F,env_spline=T,include_substrate=T)
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="chilipepper rockfish",use_depth=F,env_spline=T,include_substrate=T)
 summary(m)
 ```
 
@@ -148,7 +148,7 @@ resids <- residuals(m)[1:nrow(spp_dat),1]
 qqnorm(resids)
 qqline(resids)
 spp_dat$resid=resids
-dev.copy(jpeg,'perch1_qqe.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'curlfin1_qqe.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 ```
 
@@ -163,7 +163,7 @@ preds_time_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year') +
 
 preds_time_space
 
-dev.copy(jpeg,'perch1_timespace.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'curlfin1_timespace.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 
 ```
@@ -175,7 +175,7 @@ preds_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year',by_time
 
 preds_space
 
-dev.copy(jpeg,'pred_perch1_space.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'pred_curlfin1_space.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 
 ```
@@ -185,7 +185,7 @@ Spatial Residuals
 ```{r, fig.height=8, fig.width=5}
 resids_space <- resid_space(spp_dat,X='longitude',Y='latitude',time='year')
 resids_space
-dev.copy(jpeg,'perch1_residspace.jpg', width=5, height=6, units='in', res=300)
+dev.copy(jpeg,'curlfin1_space.jpg', width=5, height=6, units='in', res=300)
 dev.off()
 ```
 
