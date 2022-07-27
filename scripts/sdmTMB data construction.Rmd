@@ -424,7 +424,7 @@ hab <- hab %>%
 
 ## DTS Trawl Footprints
 
-```{r,eval=F}
+```{r,eval=T}
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
   st_transform(st_crs(projection_extent)) %>% 
@@ -449,6 +449,15 @@ port_coords <- read_csv(here('data','port_coords.csv'),show_col_types = F) %>%
   filter(port_name%in% unique(footprints$port_name)) %>% 
   mutate(port_name=factor(port_name,levels=c("North Puget Sound","Astoria","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
 rm(port_match)
+
+roms_ports_match <- roms %>% 
+  distinct(latitude,longitude) %>% 
+  st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km",remove=F) %>% 
+  st_join(footprints) %>% 
+  st_set_geometry(NULL) %>% 
+  drop_na() %>% 
+  dplyr::select(latitude,longitude,port_group,port_name)
+  
 ```
 
 ## DTS Landings and Value

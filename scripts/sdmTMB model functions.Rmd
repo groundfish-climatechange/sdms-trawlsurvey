@@ -39,7 +39,7 @@ This function selects a species' data from the trawl survey data, normalizes/sca
 ```{r}
 prepare_species <- function(dat,spp){
   dat_sub <- dat %>% 
-    filter(species==spp) %>% 
+    dplyr::filter(species==spp) %>% 
     
     # rescale depth, oxygen, and temp to be N(0,1)
     mutate(across(c(depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30),~(scale(.) %>% as.vector()),.names="{.col}_norm")) %>% 
@@ -1512,93 +1512,254 @@ calc_depth_frac <- function(sims_df,start_year=2020,end_year=2100){
 }
 ```
 
+## Overlap Metrics
+
+GIC, with simplified COG because for some reason `sdmTMB::get_cog()` takes forever.
 
 ```{r}
-# plot_dist_to_shore_change <- function(multisims_df,include_legend=T){
-#   d <- multisims_df %>%  
-#     left_join(roms_dist_to_coast,by=c("longitude","latitude")) %>% 
-#     group_by(species,year,lat) %>% 
-#     mutate(totest = sum(exp(mean_est)),
-#            lower=sum(exp(est5)),
-#            upper=sum(exp(est95))) %>% 
-#     mutate(rel_est=exp(mean_est)/totest,
-#            rel_est_lower=exp(est5)/lower,
-#            rel_est_upper=exp(est95)/upper) %>% 
-#     mutate(w.dist=rel_est*km_to_coast,
-#            w.dist.lower=rel_est_lower*km_to_coast,
-#            w.dist.upper=rel_est_upper*km_to_coast) %>% 
-#     summarise(w.dist=sum(w.dist),
-#               w.dist.lower=sum(w.dist.lower),
-#               w.dist.upper=sum(w.dist.upper)) %>% 
-#     ungroup() 
-#   # 1985-2010 means
-#   d2 <- d %>% 
-#     filter(year %in% c(1985:2010)) %>% 
-#     group_by(species,lat) %>% 
-#     summarise(w.dist.hist=mean(w.dist),
-#               w.dist.hist.low=mean(w.dist.lower),
-#               w.dist.hist.high=mean(w.dist.upper)) %>% 
-#     ungroup()
-#   
-#   # 2075-2100 means
-#   d3 <-  d %>% 
-#     filter(year %in% c(2075:2100)) %>% 
-#     group_by(species,lat) %>% 
-#     summarise(w.dist.fut=mean(w.dist),
-#               w.dist.fut.low=mean(w.dist.lower),
-#               w.dist.fut.high=mean(w.dist.upper)) %>% 
-#     ungroup()
-#   
-#   # difference
-#   
-#   d4 <- d2 %>% 
-#     left_join(d3,by=c('species','lat'))%>% 
-#     mutate(change1=w.dist.fut-w.dist.hist,
-#            change2=w.dist.fut.low-w.dist.hist.low,
-#            change3=w.dist.fut.high-w.dist.hist.high) %>% 
-#     # mutate(low=pmin(change1,change2,change3),
-#     #        high=pmax(change1,change2,change3)) %>% 
-#     mutate(spp_plotting=case_when(
-#       species=='dover' ~ "Dover Sole",
-#       species=="ls" ~ "Longspine",
-#       species=="ss"~"Shortspine",
-#       species=="sable" ~"Sablefish"
-#     )) %>% 
-#     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
-#     dplyr::select(species,lat,spp_plotting,contains("change")) %>% 
-#     pivot_longer(contains("change"),names_to="obs",values_to="w.dist.change")
-#   
-#   if(include_legend){
-#       p <- d4 %>% 
-#         ggplot(aes(x=lat,y=w.dist.change,col=spp_plotting))+
-#         # geom_ribbon(alpha=0.5,col=NA)+
-#         geom_point(size=0.7,alpha=0.5)+
-#         geom_smooth(se=F)+
-#         geom_hline(yintercept=0,linetype=2)+
-#         # ylim(-6,25)+
-#         scale_color_manual(values=pal4)+
-#         # scale_fill_manual(values=pal4)+
-#         # scale_y_reverse(limits=c(90,20))+
-#         coord_flip()+
-#         # theme(legend.position = c(0.8,0.7))+
-#         labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species")+
-#         theme(panel.background = element_rect(fill=NA,color='black'))
-#   } else {
-#       p <- d4 %>% 
-#         ggplot(aes(x=lat,y=w.dist.change,col=spp_plotting))+
-#         # geom_ribbon(alpha=0.5,col=NA)+
-#         geom_point(size=0.7,alpha=0.5)+
-#         geom_smooth(se=F)+
-#         geom_hline(yintercept=0,linetype=2)+
-#         # ylim(-6,25)+
-#         scale_color_manual(values=pal4,guide='none')+
-#         # scale_fill_manual(values=pal4)+
-#         # scale_y_reverse(limits=c(90,20))+
-#         coord_flip()+
-#         labs(y="Change in Distance from Shore (km)",x="Latitude")+
-#         theme(panel.background = element_rect(fill=NA,color='black'))
-#   }
-# 
-#   p
+# calc_simple_cog <- function(sims_df){
+#  out <- sims_df %>% 
+#    group_by(year,esm) %>% 
+#    summarise(across(contains('sim'),list(
+#      cogx=function(x)sum(exp(x)/sum(exp(x))*longitude),
+#      cogy=function(x)sum(exp(x)/sum(exp(x))*latitude)
+#    ))) %>% 
+#    ungroup() %>% 
+#    pivot_longer(contains("sim"),names_to='sim',values_to='cog_km') %>% 
+#    tidyr::separate(sim,c('sim','direction'),sep="_") %>% 
+#    mutate(sim=str_remove(sim,'sim') %>% as.integer,
+#           direction=str_remove(direction,'cog'))
+#  out
 # }
+
+calc_gic <- function(yr,d1,d2,cog1x,cog1y,cog2x,cog2y){
+  k_x <- d1$longitude
+  k_y <- d1$latitude
+  k <- d1$ens_est %>% exp()
+  k_cogx <- cog1x
+  k_cogy <- cog1y
+  j_x <- d2$longitude
+  j_y <- d2$latitude
+  j <- d2$ens_est %>% exp()
+  j_cogx <- cog2x
+  j_cogy <- cog2y
+  
+  k_ix <- k_x-k_cogx
+  k_iy <- k_y-k_cogy
+  k_i <- sqrt(k_ix^2+k_iy^2)
+  k_inert <- sum(k*(k_i^2),na.rm=T)/sum(k,na.rm=T)
+  
+  j_ix <- j_x-j_cogx
+  j_iy <- j_y-j_cogy
+  j_i <- sqrt(j_ix^2+j_iy^2)
+  j_inert <- sum(j*(j_i^2),na.rm=T)/sum(j,na.rm=T)
+  
+  GIC <- (((k_cogx - j_cogx)^2+(k_cogy - j_cogy)^2)/ (((k_cogx-j_cogx)^2+(k_cogy-j_cogy)^2)+k_inert + j_inert))
+  if(!is.na(GIC))
+    GIC <- 1-GIC
+  else GIC <- 1
+  GIC
+}
 ```
+
+```{r}
+gic_sims <- function(sims_df1,sims_df2,gcm,simnum){
+  
+  simname=paste0('sim',simnum)
+  dat1=sims_df1 %>% 
+    filter(esm==gcm) %>% 
+    dplyr::select(year,longitude,latitude,all_of(simname)) %>% 
+    rename(ens_est=4)
+  
+  dat2=sims_df2 %>% 
+    filter(esm==gcm) %>% 
+    dplyr::select(year,longitude,latitude,all_of(simname)) %>% 
+    rename(ens_est=4)
+  
+  c1 = dat1 %>% 
+    group_by(year) %>% 
+    summarise(cog1x=sum(exp(ens_est)/sum(exp(ens_est))*longitude),
+              cog1y=sum(exp(ens_est)/sum(exp(ens_est))*latitude)) %>% 
+    ungroup()
+  
+  c2 = dat2 %>% 
+    group_by(year) %>% 
+    summarise(cog2x=sum(exp(ens_est)/sum(exp(ens_est))*longitude),
+              cog2y=sum(exp(ens_est)/sum(exp(ens_est))*latitude)) %>% 
+    ungroup()
+  
+  datboth=dat1 %>% nest(d1=c(longitude,latitude,ens_est)) %>% 
+    left_join(dat2 %>% nest(d2=c(longitude,latitude,ens_est)),by='year') %>% 
+    left_join(c1,by='year') %>% 
+    left_join(c2,by='year') %>% 
+    rename(yr=year)# rename to match naming convention
+  
+  gic_out <- purrr::pmap_dbl(datboth,calc_gic)
+  
+  gic_out
+ 
+}
+```
+
+L, local index of collocation
+
+```{r}
+lic_D_sims <- function(sims_df1,sims_df2){
+  
+  p1 <- sims_df1 %>%
+    group_by(year,esm) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p1') %>% 
+    dplyr::select(year,esm,longitude,latitude,sim,p_p1) %>% 
+    ungroup()
+  
+  p2 <- sims_df2 %>%
+    group_by(year,esm) %>%
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p2') %>% 
+    dplyr::select(year,esm,longitude,latitude,sim,p_p2) %>% 
+    ungroup()
+  
+  pjoint <- p1 %>% 
+    left_join(p2,by=c('year','esm','longitude','latitude','sim')) %>% 
+    group_by(year,esm,sim) %>% 
+    summarise(lic=sum(p_p1*p_p2, na.rm = T)/(sqrt(sum(p_p1^2, na.rm = T)*sum(p_p2^2, na.rm = T))),
+              D= 1 - 0.5 * (sum(abs(p_p1-p_p2), na.rm = T))) %>% 
+    ungroup()
+  
+  pjoint
+
+}
+```
+
+## Fishing Footprints
+
+```{r}
+# calc_footprint_dens_sims <- function(ens_preds,fp=footprints){
+#   d <- ens_preds %>% 
+#     filter(year>2019) %>% 
+#     mutate(est=purrr::map(data,exp)) %>%
+#     # mutate(est=exp(ens_est)) %>%
+#     st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+#     st_join(footprints) %>% 
+#     st_set_geometry(NULL) %>% 
+#     filter(!is.na(port_name)) %>% 
+#     group_by(port_name,year) %>% 
+#     summarise(mean_cpue=purrr::map_dbl(est,mean),
+#               cpue5=purrr::map_dbl(est,quantile,probs=0.05),
+#               cpue95=purrr::map_dbl(est,quantile,probs=0.95),
+#               mean_log_cpue=purrr::map_dbl(data,mean),
+#               log_cpue5=purrr::map_dbl(data,quantile,probs=0.05),
+#               log_cpue95=purrr::map_dbl(data,quantile,probs=0.95)) %>% 
+#     ungroup()
+# 
+#   d
+# }
+
+# Could also calculate a relative change timeseries (% change from 2020 baseline)
+calc_footprint_reldens_sims <- function(sims_df,fp=footprints){
+ d <- sims_df %>%
+   left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+   filter(!is.na(port_name)) %>%
+   group_by(year,port_name,esm) %>% 
+   summarise(across(contains('sim'),function(x) mean(exp(x)))) %>%
+   pivot_longer(contains('sim'),names_to='sim',values_to='cpue_fp') %>% 
+   ungroup() %>% 
+   dplyr::select(year,esm,port_name,sim,cpue_fp)
+ 
+   # historical mean overlap
+  dhist <- d %>% 
+    filter(year%in%c(1985:2010)) %>% 
+    group_by(sim,esm,port_name) %>% 
+    summarise(mean_cpue_hist=mean(cpue_fp)) %>% 
+    ungroup()
+  
+  dfut <- d %>% 
+    filter(year%in%c(2075:2100)) %>% 
+    group_by(sim,esm,port_name) %>% 
+    summarise(mean_cpue_fut=mean(cpue_fp)) %>% 
+    ungroup()
+    
+  d2 <- dhist %>% 
+    left_join(dfut,by=c('sim','port_name','esm')) %>% 
+    mutate(delta=mean_cpue_fut-mean_cpue_hist,
+           delta_perc=delta/mean_cpue_hist*100)
+  
+  # d2<- d %>% 
+  #   filter(year>2019) %>% 
+  #   left_join(dhist,by=c("port_name","sim")) %>% 
+  #   mutate(delta_cpue=cpue_fp-mean_cpue_hist,
+  #          delta_cpue_perc=delta_cpue/mean_cpue_hist*100) %>% 
+  #   ungroup()
+  
+  d2
+}
+```
+
+Can also use the footprints combined with `lic_grid` to calculate a similar timeseries for the value of the overlap index within fishing footprints over time.
+
+```{r}
+lic_D_fps <- function(sims_df1,sims_df2,fp=footprints,gcm='ipsl'){
+  
+  p1 <- sims_df1 %>%
+    filter(esm==gcm) %>% 
+    group_by(year) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    #join fps
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p1') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p1) %>% 
+    ungroup()
+  
+  p2 <- sims_df2 %>%
+    filter(esm==gcm) %>% 
+    group_by(year) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    #join fps
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p2') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p2) %>% 
+    ungroup()
+  
+  pjoint <- p1 %>% 
+    left_join(p2,by=c('year','esm','port_name','longitude','latitude','sim')) %>% 
+    group_by(port_name,year,esm,sim) %>% 
+    summarise(lic=sum(p_p1*p_p2)/sqrt(sum(p_p1^2*sum(p_p2^2))),
+           D= 1 - 0.5*sum(abs(p_p1-p_p2))) %>% 
+    ungroup()
+  
+  # historical mean overlap
+  phist <- pjoint %>% 
+    filter(year%in%c(1985:2010)) %>% 
+    group_by(port_name,sim) %>% 
+    summarise(meanD=mean(D),
+              meanL=mean(lic)) %>% 
+    ungroup()
+  
+  pdelta<- pjoint %>% 
+    filter(year>2019) %>% 
+    left_join(phist,by=c("port_name","sim")) %>% 
+    mutate(deltaD=D-meanD,
+           deltaL=lic-meanL) %>% 
+    ungroup()
+  
+  pdelta
+}
+```
+
+Wrap the above for all 3 ESMs, and calculate the number of simulations with positive change (i.e., an increase in overlap relative to the historical baseline)
+```{r}
+LIC_D_prop_change <- function(df1,df2){
+  df <- purrr::map_df(c('gfdl','hadl','ipsl'),lic_D_fps,sims_df1=df1,sims_df2=df2,fp=footprints)
+  df_out <- df %>% 
+    mutate(Dplus=deltaD>0,Lplus=deltaL>0) %>% 
+    group_by(port_name,year,esm) %>% 
+    summarise(D_prop=sum(Dplus),
+              L_prop=sum(Lplus)) %>% 
+    ungroup()
+  df_out
+}
+```
+

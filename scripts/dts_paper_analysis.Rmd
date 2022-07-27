@@ -265,15 +265,15 @@ four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>%
 
 ```{r,eval=F}
 #ipsl
-dover_cog_ipsl <- make_cog(dover_models,gcm = 'ipsl',what="dat")
-sable_cog_ipsl <- make_cog(sable_models,gcm = 'ipsl',what="dat")
-ss_cog_ipsl <- make_cog(ss_models,gcm = 'ipsl',what="dat")
-ls_cog_ipsl <- make_cog(ls_models,gcm = 'ipsl',what="dat")
-
-write_rds(dover_cog,here('model output','dts paper','dover_cog_ipsl.rds'))
-write_rds(sable_cog,here('model output','dts paper','sable_cog_ipsl.rds'))
-write_rds(ss_cog,here('model output','dts paper','ss_cog_ipsl.rds'))
-write_rds(ls_cog,here('model output','dts paper','ls_cog_ipsl.rds'))
+# dover_cog_ipsl <- make_cog(dover_models,gcm = 'ipsl',what="dat")
+# sable_cog_ipsl <- make_cog(sable_models,gcm = 'ipsl',what="dat")
+# ss_cog_ipsl <- make_cog(ss_models,gcm = 'ipsl',what="dat")
+# ls_cog_ipsl <- make_cog(ls_models,gcm = 'ipsl',what="dat")
+# 
+# write_rds(dover_cog,here('model output','dts paper','dover_cog_ipsl.rds'))
+# write_rds(sable_cog,here('model output','dts paper','sable_cog_ipsl.rds'))
+# write_rds(ss_cog,here('model output','dts paper','ss_cog_ipsl.rds'))
+# write_rds(ls_cog,here('model output','dts paper','ls_cog_ipsl.rds'))
 ```
 
 # Manuscript Figures
@@ -348,20 +348,20 @@ fourspp_reldist <- bind_rows(fourspp_reldist,.id='species')
 #historical average
 fourspp_reldist_hist <- fourspp_reldist %>% 
   filter(year %in% c(1985:2010)) %>% 
-  group_by(species,lat,sim) %>% 
+  group_by(species,lat,esm,sim) %>% 
   summarise(mean_dist_hist=mean(dist)) %>% 
   ungroup()
 
 # end of century
 fourspp_reldist_fut <- fourspp_reldist %>% 
   filter(year %in% c(2075:2100)) %>% 
-  group_by(species,lat,sim) %>% 
+  group_by(species,lat,esm,sim) %>% 
   summarise(mean_dist_fut=mean(dist)) %>% 
   ungroup()
 
 # bind again
 fourspp_reldist_change <- fourspp_reldist_hist %>% 
-  left_join(fourspp_reldist_fut,by=c('species','lat','sim')) %>%
+  left_join(fourspp_reldist_fut,by=c('species','lat','esm','sim')) %>%
   mutate(change=mean_dist_fut-mean_dist_hist)
   # group_by(species,lat) %>% 
   # summarise(meanchange=mean(change),
@@ -400,10 +400,13 @@ four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
       species=="sable" ~"Sablefish"
     )) %>% 
     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  mutate(ESM=toupper(esm)) %>% 
   ggplot(aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting))+
   geom_point(alpha=0.2,size=0.7)+
   geom_hline(yintercept=0,linetype=2)+
   geom_smooth()+
+  scale_y_continuous(limits=c(-20,20))+
+  facet_wrap(~ESM,nrow=1)+
   scale_color_manual(values=pal4)+
   scale_fill_manual(values=pal4)+
   # scale_y_reverse(limits=c(90,20))+
@@ -413,8 +416,11 @@ four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
   theme(panel.background = element_rect(fill=NA,color='black'))
 
 four_spp_dist_to_shore_change
-ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist_to_shore_change,w=6,h=6)
 ```
+```{r}
+ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist_to_shore_change,w=8,h=6)
+```
+
 
 Depth change
 
@@ -429,11 +435,16 @@ fourspp_depth_plot <- fourspp_depth %>%
       species=="sable" ~"Sablefish"
     )) %>% 
     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  mutate(ESM=toupper(esm)) %>% 
+  group_by(species,year,esm) %>% 
+  slice_sample(n=25) %>% 
+  ungroup() %>% 
   ggplot(aes(x=year,y=frac,col=spp_plotting,fill=spp_plotting))+
   geom_point(alpha=0.2,size=0.7)+
   geom_smooth()+
   scale_color_manual(values=pal4)+
   scale_fill_manual(values=pal4)+
+  facet_wrap(~ESM,nrow=1)+
   # scale_color_manual(values=c("#2271B2","#d55e00"))+
   labs(x="Year",y="Proportion < 700 fathoms",title="",fill="Species",col="Species")+
   theme(axis.text.x=element_text(size=10),
@@ -450,14 +461,14 @@ ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_
 
 ```{r,fig.width=7,fig.height=5}
 leg <- get_legend(fourspp_depth_plot)
-fig_dist_depth_change<-plot_grid(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm'))+guides(color='none',fill='none'),
-                                 fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0.5,0.5,1.5,0.5),'cm')),
-                                 nrow=1,labels='auto')
+fig_dist_depth_change<-plot_grid(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,0.1,0.5),'cm'))+guides(color='none',fill='none'),
+                                 fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0,0.5,1.5,0.5),'cm')),
+                                 nrow=2,labels='auto')
 fig_dist_depth_change<-ggdraw()+
   draw_plot(fig_dist_depth_change)+
   draw_plot(leg,y=-0.45)
 
-ggsave(here('model output','dts paper','fig_dist_depth_change.png'),fig_dist_depth_change,w=8,h=5)
+ggsave(here('model output','dts paper','fig_dist_depth_change.png'),fig_dist_depth_change,w=8,h=7.5)
 ```
 
 ## Figure 3
@@ -550,42 +561,225 @@ ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,h=8,w
 
 ## Figure 4
 
-```{r}
-```{r}
-ens_est_overlaps <- dover_ens %>% nest(dover = c(longitude, latitude, lat, lon, depth_m, ens_est)) %>% 
-  # join all the data and cogs nested by year
-  left_join(sable_ens %>% nest(sable = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
-  left_join(ss_ens %>% nest(ss = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
-  left_join(ls_ens %>% nest(ls = c(longitude, latitude, lat, lon, depth_m, ens_est)),by = "year") %>% 
-  left_join(dover_cog %>% nest(dover_cog=c(w.est_x,w.est_y)),by = "year")%>% 
-  left_join(sable_cog %>% nest(sable_cog=c(w.est_x,w.est_y)),by = "year")%>% 
-  left_join(ss_cog %>% nest(ss_cog=c(w.est_x,w.est_y)),by = "year") %>%  
-  left_join(ls_cog %>% nest(ls_cog=c(w.est_x,w.est_y)),by = "year") %>% 
-  
-  # calculate the gic
-  mutate(dover_sable_gic=purrr::pmap_dbl(list(dat1=dover,dat2=sable,cog1=dover_cog,cog2=sable_cog),gic)) %>%
-  mutate(dover_ss_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ss,cog1=dover_cog,cog2=ss_cog),gic)) %>% 
-  mutate(dover_ls_gic=purrr::pmap_dbl(list(dat1=dover,dat2=ls,cog1=dover_cog,cog2=ls_cog),gic)) %>% 
-  mutate(sable_ss_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ss,cog1=sable_cog,cog2=ss_cog),gic)) %>% 
-  mutate(sable_ls_gic=purrr::pmap_dbl(list(dat1=sable,dat2=ls,cog1=sable_cog,cog2=ls_cog),gic)) %>% 
-  mutate(ss_ls_gic=purrr::pmap_dbl(list(dat1=ss,dat2=ls,cog1=ss_cog,cog2=ls_cog),gic)) %>% 
-  
-  # calculate Schoener's D
-  mutate(dover_sable_sch=purrr::pmap_dbl(list(dat1=dover,dat2=sable),schoeners)) %>% 
-  mutate(dover_ss_sch=purrr::pmap_dbl(list(dat1=dover,dat2=ss),schoeners)) %>% 
-  mutate(dover_ls_sch=purrr::pmap_dbl(list(dat1=dover,dat2=ls),schoeners)) %>% 
-  mutate(sable_ss_sch=purrr::pmap_dbl(list(dat1=sable,dat2=ss),schoeners)) %>% 
-  mutate(sable_ls_sch=purrr::pmap_dbl(list(dat1=sable,dat2=ls),schoeners)) %>% 
-  mutate(ss_ls_sch=purrr::pmap_dbl(list(dat1=ss,dat2=ls),schoeners)) %>% 
-  
-  # calculate local colocation
-  mutate(dover_sable_loc=purrr::pmap_dbl(list(dat1=dover,dat2=sable),lic)) %>% 
-  mutate(dover_ss_loc=purrr::pmap_dbl(list(dat1=dover,dat2=ss),lic)) %>% 
-  mutate(dover_ls_loc=purrr::pmap_dbl(list(dat1=dover,dat2=ls),lic)) %>%
-  mutate(sable_ss_loc=purrr::pmap_dbl(list(dat1=sable,dat2=ss),lic)) %>%  
-  mutate(sable_ls_loc=purrr::pmap_dbl(list(dat1=sable,dat2=ls),lic)) %>% 
-  mutate(ss_ls_loc=purrr::pmap_dbl(list(dat1=ss,dat2=ls),lic))
+Calculate GIC for each species combination, year, simulation, and ESM
 
+```{r}
+tic("Ran GIC for sims")
+dover_sable_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=dover_ens_separate,sims_df2=sable_ens_separate))
+
+dover_ss_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=dover_ens_separate,sims_df2=ss_ens_separate))
+
+dover_ls_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=dover_ens_separate,sims_df2=ls_ens_separate))
+
+sable_ss_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=sable_ens_separate,sims_df2=ss_ens_separate))
+
+sable_ls_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=sable_ens_separate,sims_df2=ls_ens_separate))
+
+ss_ls_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
+  mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=ss_ens_separate,sims_df2=ls_ens_separate))
+toc()
 ```
+Calculate LIC and Schoener's D.
+
+```{r}
+tic("Ran LIC and D for sims")
+dover_sable_lic <- lic_D_sims(dover_ens_separate,sable_ens_separate)
+dover_ss_lic <- lic_D_sims(dover_ens_separate,ss_ens_separate)
+dover_ls_lic <- lic_D_sims(dover_ens_separate,ls_ens_separate)
+sable_ss_lic <- lic_D_sims(sable_ens_separate,ss_ens_separate)
+sable_ls_lic <- lic_D_sims(sable_ens_separate,ls_ens_separate)
+ss_ls_lic <- lic_D_sims(ss_ens_separate,ls_ens_separate)
+toc()
+```
+Join and plot
+
+```{r}
+dover_sable_overlap <- dover_sable_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(dover_sable_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+dover_ss_overlap <- dover_ss_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(dover_ss_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+dover_ls_overlap <- dover_ls_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(dover_ls_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+sable_ss_overlap <- sable_ss_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(sable_ss_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+sable_ls_overlap <- sable_ls_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(sable_ls_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+ss_ls_overlap <- ss_ls_gic %>% 
+  unnest(cols=c(gic)) %>% 
+  mutate(year=rep(1980:2100,300)) %>% 
+  left_join(ss_ls_lic %>% mutate(simnum=str_remove(sim,'sim') %>% as.numeric()),
+            by=c('gcm'='esm','simnum','year'))
+```
+
+```{r}
+# make a good color palette
+# 3 sets of 3 colors for the 3 ESMs and 3 metrics
+#"#790149","#9F0162","#EF0096",
+overlaps_cols <- c("#005745","#009175","#00CBA7",
+                   "#7E0018","#CD022D","#FF6E3A",
+                   "#00306F","#005FCC","#00C2F9")
+overlap_plot_foo <- function(overlap_df,show_legend=FALSE){
+  p <- overlap_df %>% 
+    filter(year>2019) %>% 
+    pivot_longer(cols=c('gic','lic','D'),names_to='metric',values_to='value') %>% 
+    unite(esm_metric,gcm,metric,remove=F) %>% 
+    unite(sim_esm_metric,simnum,esm_metric,remove=F) %>% 
+    ggplot(aes(year,value,color=esm_metric))+
+    # geom_point(alpha=0.2,size=0.7)+
+    geom_line(aes(group=sim_esm_metric),color='gray80')+
+    geom_smooth(se=F)+
+    scale_color_manual(values=overlaps_cols)+
+    labs(x="Year",y="Overlap",color="Metric")+
+    theme(panel.background = element_rect(color="black",fill=NA),
+          legend.position = 'bottom')
+  if(!show_legend) p+guides(color='none')
+  else p
+}
+
+dover_sable_overlap_plot <- overlap_plot_foo(dover_sable_overlap,show_legend = T)
+dover_ss_overlap_plot <- overlap_plot_foo(dover_ss_overlap)
+dover_ls_overlap_plot <- overlap_plot_foo(dover_ls_overlap)
+sable_ss_overlap_plot <- overlap_plot_foo(sable_ss_overlap)
+sable_ls_overlap_plot <- overlap_plot_foo(sable_ls_overlap)
+ss_ls_overlap_plot <- overlap_plot_foo(ss_ls_overlap)
+overlaps_legend <- get_legend(dover_sable_overlap_plot)
+
+r1 <- plot_grid(dover_sable_overlap_plot+guides(color='none'),sable_ss_overlap_plot,sable_ls_overlap_plot,dover_ss_overlap_plot,dover_ls_overlap_plot,ss_ls_overlap_plot,nrow=2,labels='auto')
+r2=plot_grid(NULL,NULL,overlaps_legend,NULL,NULL,nrow=1)
+
+overlaps_all_fig4 <- plot_grid(r1,r2,nrow=2,rel_heights = c(1,0.2))
+
+ggsave(here('model output','dts paper','fig_overlaps_all.png'),overlaps_all_fig4,h=8,w=8)
+```
+
+## Figure 5
+
+```{r,fig.height=8,fig.width=8}
+dover_sable_lic_D <- LIC_D_prop_change(dover_ens_separate,sable_ens_separate)
+dover_ss_lic_D <- LIC_D_prop_change(dover_ens_separate,ss_ens_separate)
+dover_ls_lic_D <- LIC_D_prop_change(dover_ens_separate,ls_ens_separate)
+sable_ss_lic_D <- LIC_D_prop_change(sable_ens_separate,ss_ens_separate)
+sable_ls_lic_D <- LIC_D_prop_change(sable_ens_separate,ls_ens_separate)
+ss_ls_lic_D <- LIC_D_prop_change(ss_ens_separate,ls_ens_separate)
+
+# together
+LIC_D_fps_all <- dover_sable_lic_D %>% mutate(spp="Sablefish/Dover Sole") %>% 
+  bind_rows(dover_ss_lic_D %>% mutate(spp="Dover Sole/Shortspine")) %>%  
+  bind_rows(dover_ls_lic_D %>% mutate(spp="Dover Sole/Longspine")) %>%  
+  bind_rows(sable_ss_lic_D %>% mutate(spp="Sablefish/Shortspine")) %>%  
+  bind_rows(sable_ls_lic_D %>% mutate(spp="Sablefish/Longspine")) %>%  
+  bind_rows(ss_ls_lic_D %>% mutate(spp="Shortspine/Longspine")) %>% 
+  mutate(spp=factor(spp,levels=c("Sablefish/Dover Sole","Sablefish/Shortspine","Sablefish/Longspine",
+                                 "Dover Sole/Shortspine","Dover Sole/Longspine","Shortspine/Longspine")))
+
+D_fps_plot <- LIC_D_fps_all %>% 
+  mutate(ESM=toupper(esm)) %>% 
+  ggplot(aes(year,fct_rev(spp),fill=D_prop/100,col=D_prop/100))+
+  geom_tile()+
+  # geom_point(size=0.2)+
+  # geom_smooth(se=F)+
+  facet_grid(port_name~ESM)+
+  scale_x_continuous(expand=c(0,0))+
+  # scale_y_continuous(limits=c(0,1))+
+  scale_fill_gradient2(midpoint=0.5)+
+  scale_color_gradient2(midpoint=0.5)+
+  # geom_hline(yintercept=0.5,linetype=2)+
+  labs(x="Year",y="Species Pair",fill="Proportion of Simulations\nwith Increased Overlap",
+       color="Proportion of Simulations\nwith Increased Overlap")+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        legend.position = 'bottom',
+        axis.text.x = element_text(angle=45,vjust=0.8,hjust=0.8),
+        legend.key.width = unit(0.75,'inches'),
+        panel.spacing = unit(0.2,'inches'),
+        strip.text = element_text(size=8),
+        panel.border = element_rect(color='black',fill=NA,size=1.5))
+
+D_fps_plot
+
+ggsave(here('model output','dts paper','fig_overlaps_footprints.png'),D_fps_plot,w=8,h=8)
+```
+
+## Figure 6
+
+Try a new way with smoothed histograms
+
+```{r,fig.height=8,fig.width=8}
+allspp_reldens <- purrr::map2_df(list(dover_ens_separate,sable_ens_separate,ss_ens_separate,ls_ens_separate),
+                                 c('dover','sable','shortspine','longspine'),
+                                 function(x,y){
+                                   calc_footprint_reldens_sims(x) %>% mutate(spp=y)
+                                 }) %>%
+  mutate(ESM=toupper(esm)) %>% 
+  mutate(spp_plotting=case_when(
+      spp=='dover' ~ "Dover Sole",
+      spp=="longspine" ~ "Longspine",
+      spp=="shortspine"~"Shortspine",
+      spp=="sable" ~"Sablefish"
+    )) %>% 
+  mutate(spp_plotting=factor(spp_plotting,levels=c("Sablefish","Dover Sole","Shortspine","Longspine"))) %>% 
+  # mutate(delta_perc=ifelse(delta_perc>200|delta_perc < -200,NA,delta_perc)) %>% 
+  drop_na()
+
+reldens_fig <- allspp_reldens %>% 
+  dplyr::select(sim,ESM,spp_plotting,delta_perc,port_name) %>% 
+  unite(fct,spp_plotting,port_name,sep="\n",remove=F) %>% 
+  mutate(fct=factor(fct,levels=unique(fct))) %>% 
+  ggplot(aes(delta_perc,fill=ESM))+
+  geom_density(alpha=0.5)+
+  geom_vline(xintercept=0,linetype=2)+
+  facet_wrap(~fct,scales='free',ncol=6)+
+  # xlim(-200,200)+
+  scale_color_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
+  scale_fill_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
+  labs(x="Percent Change in CPUE",y="",fill="CCROMS Model")+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(angle=45,vjust=0.8,hjust=0.8),
+        axis.ticks.x = element_line(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor=element_blank())
+
+
+  # nest(dat=c(sim,ESM,port_name,delta_perc)) %>% 
+  # mutate(p=purrr::map(dat,function(d){
+  #     d %>%
+  #     ggplot(aes(delta_perc,fill=ESM))+
+  #     geom_density(alpha=0.5)+
+  #     geom_vline(xintercept=0,linetype=2)+
+  #     facet_wrap(~port_name,scales='free_y',nrow=1)+
+  #     # xlim(-200,200)+
+  #     scale_color_npg()+
+  #     scale_fill_npg()+
+  #     labs(x="Percent Change in CPUE",y="",fill="CCROMS Model")+
+  #     theme(panel.background = element_rect(fill=NA,color='black'),
+  #           axis.text.y=element_blank(),
+  #           panel.grid.major = element_blank(),
+  #           panel.grid.minor=element_blank())
+  # }))
+
+# plot_grid(plotlist = reldens_fig$p,nrow=4)
+
+reldens_fig
+ggsave(here('model output','dts paper','fig_cpue_change_footprints.png'),reldens_fig,w=8,h=8)
 ```
 

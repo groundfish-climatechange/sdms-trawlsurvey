@@ -138,7 +138,7 @@ bottom_trawl_port_year <- total_catch_summarized %>%
 # tribal
 tribal_port_year <- total_catch_summarized %>% 
   filter(dataset=="tribal") %>% 
-  group_by(iopac,year,code,group_name) %>% 
+  group_by(iopac,year,code,gear,group_name) %>% 
   summarise(totcatch=sum(totcatch)) %>% 
   mutate(fishery_type="tribal") %>% 
   ungroup()
@@ -152,6 +152,20 @@ other_gears_port_year <- total_catch_summarized %>%
 
 
 # plots
+palfleets <- viridis::viridis_pal(option="D")(3) %>% set_names(c('bottom trawl','tribal','generic'))
+catch2013 <- bind_rows(bottom_trawl_port_year,tribal_port_year,other_gears_port_year) %>% 
+  filter(year==2013)
+
+  
+    # ggplot(aes(fct_reorder(group_name,desc(totcatch)),totcatch,fill=fishery_type))+
+  # geom_col(position='dodge')+
+  # scale_fill_manual(values=palfleets)+
+  # # facet_wrap(~iopac,scales='free')+
+  # labs(x="Species Group",y="2013 Total Catch",fill="Fishery",title="North WA Coast, 2013")+
+  # theme_minimal()+
+  # theme(axis.text.x = element_text(angle=90,vjust=0.5))
+
+catch2013
 # look at a quick plot
 # dat_ifq_atl %>% 
 #   filter(!is.na(group_name)) %>% 
