@@ -370,22 +370,22 @@ plot_all_env_relationships <- function(m){
   if(grepl('depth_trawl_norm',form)){
     depth_relationship <- plot_single_env_relationship(m,predvar="depth_trawl_norm")+
       labs(x="Depth (m)")
-  } else depth_relationship=NA
+  } else depth_relationship=NULL
   
   if(grepl('prop_hard_mixed',form)){
     hab_relationship <- plot_single_env_relationship(m,predvar="prop_hard_mixed")+
       labs(x="Proportion Hard Substrate")
-  } else hab_relationship=NA
+  } else hab_relationship=NULL
     
   if(grepl('temp_roms',form)){
     temp_relationship <- plot_single_env_relationship(m,predvar="mean_temp_roms_30_norm")+
       labs(x="Bottom Temperature")
-  } else temp_relationship=NA
+  } else temp_relationship=NULL
   
   if(grepl('mean_oxygen_roms_30_norm',form)){
     oxy_relationship <- plot_single_env_relationship(m,predvar="mean_oxygen_roms_30_norm")+
       labs(x="Bottom Oxygen")
-  } else oxy_relationship=NA
+  } else oxy_relationship=NULL
   
   cowplot::plot_grid(temp_relationship,oxy_relationship,depth_relationship,hab_relationship,nrow=2)
 }
