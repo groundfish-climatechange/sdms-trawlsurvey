@@ -478,7 +478,7 @@ make_env <- function(modelobj){
 ```
 
 
-## Aurora Rockfish (substrate)
+## Aurora Rockfish (depth + substrate)
 
 ```{r}
 m.aurora <- run_sdmTMB(dat=trawl_roms_utm,spp="aurora rockfish",use_depth=T,env_spline=T,include_substrate=T)
@@ -728,5 +728,192 @@ hab_relationship <- plot_single_env_relationship(m.aurora,predvar="prop_hard_mix
 cowplot::plot_grid(depth_relationship,oxy_relationship,temp_relationship,hab_relationship,nrow=2)
 
 dev.copy(jpeg,'aurora_env.jpg', width=5, height=5, units='in', res=300)
+dev.off()
+```
+## Darkblotched Rockfish (depth + substrate)
+
+```{r}
+m.dark <- run_sdmTMB(dat=trawl_roms_utm,spp="darkblotched rockfish",use_depth=T,env_spline=T,include_substrate=T)
+summary(m.dark)
+```
+
+### Normal QQ plot
+
+```{r}
+resids <- residuals(m.dark)[1:nrow(spp_dat),1]
+qqnorm(resids, main = "Darkblotched Normal Q-Q Plot")
+qqline(resids)
+spp_dat$resid=resids
+dev.copy(jpeg,'Darkblotched_qq.jpg', width=5, height=6, units='in', res=300)
+dev.off()
+```
+### Spatial Predictions
+
+```{r,fig.height=6, fig.width=5}
+preds <- predict(m.dark) %>% filter(year %in% unique(spp_dat$year)) %>% pull('est')
+spp_dat$pred <- preds
+
+# predictions, with time and space
+preds_time_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year',) + coord_equal()
+
+preds_time_space
+
+dev.copy(jpeg,'dark_timespace.jpg', width=5, height=6, units='in', res=300)
+dev.off()
+
+# predictions, across space but averaged over time
+preds_space <- pred_space(spp_dat,X='longitude',Y='latitude',time='year',by_time = F)
+
+preds_space
+
+dev.copy(jpeg,'dark_pred.jpg', width=5, height=6, units='in', res=300)
+dev.off()
+```
+
+### Spatial Residuals
+
+```{r, fig.height=8, fig.width=5}
+resids_space <- resid_space(spp_dat,X='longitude',Y='latitude',time='year')
+resids_space
+dev.copy(jpeg,'dark_residuals.jpg', width=5, height=6, units='in', res=300)
+dev.off()
+```
+
+### Make predictions
+
+```{r}
+make_predictions <- function(modelobj,gcm="hadl"){
+
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  mean_depth <- mean(original_model_data$depth_trawl,na.rm=T)
+  sd_depth <- sd(original_model_data$depth_trawl,na.rm=T)
+  
+  # create a new tibble with the projected data for the chosen gcm
+  newdata <- roms %>% 
+    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
+    left_join(hab,by=c("lat","lon")) %>% 
+    drop_na() %>% 
+    mutate(depth_m= -depth_m) %>%
+    dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
+  
+  temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
+    set_names('temperature') %>% 
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
+    set_names('oxygen') %>% 
+    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+  
+  depth_new <- newdata %>% dplyr::select(contains('depth')) %>% 
+    set_names('depth') %>% 
+    mutate(depth_trawl_norm=(depth-mean_depth)/sd_depth)
+
+  newdata <- newdata %>% 
+    bind_cols(temperature) %>% 
+    bind_cols(oxygen) %>% 
+    bind_cols(depth_new) %>% 
+    dplyr::select(-temperature,-oxygen, -depth) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  # now we can make the predictions
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=F,extra_time=yrs)
+  
+  predicted_cpue_km2
+}
+```
+
+```{r}
+preds.dark = make_predictions(m.dark, gcm = "hadl")
+```
+
+```{r}
+write.csv(preds.aurora, "aurorapreds.csv", row.names=FALSE, quote=FALSE) 
+```
+
+
+### mapping, annual map
+```{r}
+# pretty grid for raster maps
+gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+  st_intersection(projection_extent)
+gr_xy <- st_coordinates(gr)
+```
+
+```{r}
+map_year <- function(model_ens,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(model_ens$est),0.99))
+  df <- model_ens %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(projection_extent)
+  
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+  
+  else{
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      scale_fill_viridis_c(limits=scl)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
+  }
+  out
+}
+```
+
+
+```{r}
+map_year(preds.aurora,yr_vec = 2100)
+dev.copy(jpeg,'aurora_annualmap2100.jpg', width=5, height=5, units='in', res=300)
+dev.off()
+```
+
+### mapping, difference map
+```{r}
+make_comparison_map <- function(model_ens,yr=2050){
+  basepred <- map_year(model_ens,yr_vec=1980:2010,return_pred_df = T)
+  newpred <- map_year(model_ens,yr_vec=yr,return_pred_df = T) %>% 
+    mutate(est_comp=est) %>% dplyr::select(-est)
+  both <- basepred %>% 
+    left_join(newpred,by=c('X','Y')) %>% 
+    mutate(diffpred=est_comp-est)
+  
+  bbox=st_bbox(projection_extent)
+  
+  out<-ggplot(coast)+
+        geom_sf()+
+        # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+        # scale_color_viridis_c()+
+        geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
+        scale_fill_gradient2(low = "red", mid = "white", high = "purple")+
+        # scale_fill_viridis_c(direction = -1)+
+        xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+        labs(x="",y="",fill="Difference")
+  out
+}
+```
+
+```{r}
+make_comparison_map(preds.aurora, yr = 2025:2100)
+dev.copy(jpeg,'aurora_diffmap20252100.jpg', width=5, height=5, units='in', res=300)
 dev.off()
 ```
