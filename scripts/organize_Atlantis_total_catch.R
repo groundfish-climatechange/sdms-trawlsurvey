@@ -53,6 +53,7 @@ dat_ifq_atl <- dat_ifq %>%
   left_join(atlantis_groups,by=c('common_name'='trawl_name')) %>% 
   mutate(ret_dt_mt=ret_mt+dis_mt,
          year=as.integer(year)) %>% 
+  filter(!is.na(group_name)) %>% 
   group_by(iopac,year,gear,code,group_name) %>% 
   # sum the total catch
   summarise(totcatch=sum(ret_dt_mt)) %>% 
@@ -66,11 +67,13 @@ dat_allspp_noncs_atl <- dat_allspp_noncs %>%
   mutate(sci=tolower(scientific_name)) %>% 
   left_join(species_lookup_fix,by=c('sci'='scientific_name')) %>% 
   left_join(atlantis_groups,by=c('common_name'='trawl_name')) %>% 
-  # fill in zeroes
+  # fill in zeroes and replace infinites
   mutate(ret_mt=replace_na(ret_mt,0),
-         est_dis_mt=replace_na(est_dis_mt,0)) %>% 
+         est_dis_mt=replace_na(est_dis_mt,0),
+         est_dis_mt=ifelse(is.infinite(est_dis_mt),0,est_dis_mt)) %>% 
   mutate(ret_dt_mt=ret_mt+est_dis_mt, # estimate of discards using ratios
          year=as.integer(year)) %>% 
+  filter(!is.na(group_name)) %>% 
   group_by(iopac,year,gear,code,group_name) %>% 
   # sum the total catch
   summarise(totcatch=sum(ret_dt_mt)) %>% 
@@ -86,7 +89,8 @@ dat_tribal_atl <- dat_allspp_noncs %>%
   mutate(ret_mt=replace_na(ret_mt,0),
          est_dis_mt=replace_na(est_dis_mt,0)) %>% 
   mutate(ret_dt_mt=ret_mt+est_dis_mt, # estimate of discards using ratios
-         year=as.integer(year)) %>% 
+         year=as.integer(year))%>% 
+  filter(!is.na(group_name)) %>% 
   group_by(iopac,year,gear,code,group_name) %>% 
   # sum the total catch
   summarise(totcatch=sum(ret_dt_mt)) %>% 
@@ -101,8 +105,10 @@ dat_nonifq_atl <- dat_nonifq %>%
   # fill in zeroes
   mutate(ret_mt=replace_na(ret_mt,0),
          total_est_dis_mt=coalesce(total_est_dis_mt,dis_ob_mt)) %>% 
+  mutate(total_est_dis_mt=replace_na(total_est_dis_mt,0)) %>% 
   mutate(ret_dt_mt=ret_mt+total_est_dis_mt,
-         year=as.integer(year)) %>% 
+         year=as.integer(year)) %>%
+  filter(!is.na(group_name)) %>% 
   group_by(iopac,year,gear,code,group_name) %>% 
   # sum the total catch
   summarise(totcatch=sum(ret_dt_mt)) %>% 
@@ -114,34 +120,58 @@ dat_allspp_cs_2021_atl<- dat_allspp_cs_2021 %>%
   mutate(sci=tolower(scientific_name)) %>% 
   left_join(species_lookup_fix,by=c('sci'='scientific_name')) %>% 
   left_join(atlantis_groups,by=c('common_name'='trawl_name')) %>% 
+  mutate(ret_mt=replace_na(ret_mt,0),
+         total_est_dis_mt=replace_na(total_est_dis_mt,0)) %>% 
   mutate(ret_dt_mt=ret_mt+total_est_dis_mt,
          year=as.integer(year)) %>% 
+  filter(!is.na(group_name)) %>% 
   group_by(iopac,year,gear,code,group_name) %>% 
   # sum the total catch
   summarise(totcatch=sum(ret_dt_mt)) %>% 
   ungroup()
 
 # Organize output and save
-# for this we do even more lumping- all bottom trawl species (non-IFQ and IFQ) except tribal catch go into one category, 
-# while all tribal catch is kept separate, and finally, all non-trawl catch goes into another category
-# all categories are also organized by year and port group
+# for this we do even more lumping, into 4 main categories- 
+# 1. all non-tribal bottom trawl catch (non-IFQ and IFQ), by port group
+# 2. all tribal trawl catch, lumped (Makah)
+# 3. all tribal non-trawl catch, lumped
+# 4. all other non-trawl catch, by port group
+
 total_catch_summarized <- list(ifq=dat_ifq_atl,noncs=dat_allspp_noncs_atl,
                                nonifq=dat_nonifq_atl,cs2021=dat_allspp_cs_2021_atl,
                                tribal=dat_tribal_atl) %>% 
   bind_rows(.id='dataset') %>% 
   filter(!is.na(group_name))
+
+unique(total_catch_summarized$gear)
+
 # bottom trawl all species
 bottom_trawl_port_year <- total_catch_summarized %>% 
   filter(gear=="Bottom Trawl",dataset!='tribal') %>% 
-  dplyr::select(-dataset) %>% 
-  mutate(fishery_type="bottom trawl")
-# tribal
-tribal_port_year <- total_catch_summarized %>% 
-  filter(dataset=="tribal") %>% 
-  group_by(iopac,year,code,gear,group_name) %>% 
+  group_by(iopac,year,code,group_name) %>% 
   summarise(totcatch=sum(totcatch)) %>% 
-  mutate(fishery_type="tribal") %>% 
+  ungroup() %>% 
+  # dplyr::select(-dataset) %>% 
+  mutate(fishery_type="bottom trawl")
+
+# tribal
+tribal_trawl_year <- total_catch_summarized %>%
+  # pull tribal trawl data (any kind of trawl)
+  filter(dataset=="tribal",grepl("Trawl",gear)) %>% 
+  group_by(iopac,year,code,group_name) %>% 
+  summarise(totcatch=sum(totcatch)) %>% 
+  mutate(fishery_type="tribal trawl") %>% 
   ungroup()
+
+# tribal non-trawl
+tribal_nontrawl_year <- total_catch_summarized %>%
+  # pull tribal trawl data (any kind of trawl)
+  filter(dataset=="tribal",!grepl("Trawl",gear)) %>% 
+  group_by(iopac,year,code,group_name) %>% 
+  summarise(totcatch=sum(totcatch)) %>% 
+  mutate(fishery_type="tribal non-trawl") %>% 
+  ungroup()
+
 # all other non-trawl, non-tribal catch (generic fleets)
 other_gears_port_year <- total_catch_summarized %>% 
   filter(gear!="Bottom Trawl",dataset!='tribal') %>% 
@@ -150,12 +180,11 @@ other_gears_port_year <- total_catch_summarized %>%
   mutate(fishery_type="generic") %>% 
   ungroup()
 
-
 # plots
 palfleets <- viridis::viridis_pal(option="D")(3) %>% set_names(c('bottom trawl','tribal','generic'))
-catch2013 <- bind_rows(bottom_trawl_port_year,tribal_port_year,other_gears_port_year) %>% 
+catch2013 <- bind_rows(bottom_trawl_port_year,tribal_trawl_year,tribal_nontrawl_year,other_gears_port_year) %>% 
   filter(year==2013)
-
+write_csv(catch2013,here::here('data','atlantis','catch_by_fleet_2013.csv'))
   
     # ggplot(aes(fct_reorder(group_name,desc(totcatch)),totcatch,fill=fishery_type))+
   # geom_col(position='dodge')+
