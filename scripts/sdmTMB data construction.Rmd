@@ -424,7 +424,7 @@ hab <- hab %>%
 
 ## DTS Trawl Footprints
 
-```{r,eval=T}
+```{r,eval=F}
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
   st_transform(st_crs(projection_extent)) %>% 

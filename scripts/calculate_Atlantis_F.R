@@ -51,5 +51,16 @@ harvest_block <- Finit %>%
   dplyr::select(prmName,Index,mFC) %>% 
   pivot_wider(names_from="Index",values_from = "mFC")
 
+catch_block <- Finit %>% 
+  dplyr::select(Index,code,totcatch) %>% 
+  # fill in missing Index/code combos with zeroes
+  complete(Index=full_seq(c(1,54),1),code,fill=list(totcatch=0)) %>% 
+  mutate(prmName=paste('catch',code,sep="_")) %>% 
+  arrange(prmName,Index) %>% 
+  dplyr::select(prmName,Index,totcatch) %>% 
+  pivot_wider(names_from="Index",values_from = "totcatch")
+
+options(scipen = 0)
 # write!
 write.table(harvest_block,here::here('data','atlantis','groundfish_mFC_by_fleet.txt'),quote=F,row.names=F)
+write.table(catch_block,here::here('data','atlantis','groundfish_catch_by_fleet.txt'),quote=F,row.names=F )
