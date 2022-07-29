@@ -516,10 +516,10 @@ process_species_model(species='english sole',incl_depth = T,incl_substrate = T)
 
 Arrowtooth flounder: depth and substrate
 ```{r}
-process_species_model(species='dover sole',incl_depth = T,incl_substrate = T)
+process_species_model(species='arrowtooth flounder',incl_depth = T,incl_substrate = T)
 ```
 
 Pacific sanddab: substrate
 ```{r}
-process_species_model(species='dover sole',incl_depth = F,incl_substrate = T)
+process_species_model(species='pacific sanddab',incl_depth = F,incl_substrate = T)
 ```
