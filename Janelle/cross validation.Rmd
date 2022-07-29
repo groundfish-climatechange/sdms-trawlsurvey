@@ -38,7 +38,7 @@ prepare_species <- function(dat,spp){
 ```
 
 ```{r}
-run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_field=F,include_substrate=F,hab_spline=F,env_spline=F,spline_k=3,return_what='loglik'){
+run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=F,time_vary=F,spatial_field=F,include_substrate=F,hab_spline=T,env_spline=T,spline_k=3,return_what='loglik'){
   # filter data for species
   modeldat <- prepare_species(dat,spp=spp)
   # make spde
@@ -114,7 +114,7 @@ run_sdmTMB_cv <- function(dat,spp,nknots=400,use_depth=T,time_vary=F,spatial_fie
 ## Choose a species
 
 ```{r}
-spp <- "longnose skate"
+spp <- "sharpchin rockfish"
 
 spp_dat <- prepare_species(trawl_roms_utm,spp)
 
@@ -123,6 +123,6 @@ spp_dat <- prepare_species(trawl_roms_utm,spp)
 # Model output
 
 ```{r}
-m <- run_sdmTMB_cv(dat=trawl_roms_utm,spp="longnose skate",use_depth=F,env_spline=T,include_substrate=T)
+m <- run_sdmTMB_cv(dat=trawl_roms_utm,spp="sharpchin rockfish",use_depth=F,env_spline=T,include_substrate=F)
 summary(m)
 ```
