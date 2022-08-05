@@ -4,35 +4,40 @@
 # total catch from WCGOP was organized in separate script "organize_Atlantis_total_catch.R"
 library(tidyverse)
 
-# catch data
+
+# fleets (with a manually-added set of columns to match to catch data)
+fleets <- read_csv(here::here('data','atlantis','Atlantis_54fleets_definitions.csv'))
+
+# catch data wcgop
 catch <- read_csv(here::here('data','atlantis','catch_by_fleet_2013.csv'))
 
 # biomass data
 bio <- read_table(here::here('data','atlantis','outputCCV4_testBiomIndx.txt'))
 
-# fleets (with a manually-added set of columns to match to catch data)
-fleets <- read_csv(here::here('data','atlantis','Atlantis_54fleets_definitions.csv'))
 
 # organize biomass data by Atlantis species code
 bio <- bio %>% 
   # pull bottom trawl species codes only
-  dplyr::select(Time,any_of(unique(catch$code))) %>% 
+  dplyr::select(Time,any_of(unique(catch$FG))) %>% 
   # take only the initial biomass, then convert to long form
   filter(Time==0) %>% 
   dplyr::select(-Time) %>% 
-  pivot_longer(everything(),names_to="code",values_to="biomass")
+  pivot_longer(everything(),names_to="FG",values_to="biomass")
 
 # make sure fleets align with Atlantis fleets (use matching key)
 Atlantis_catch <- catch %>% 
   left_join(fleets,by=c("iopac","fishery_type")) %>% 
   filter(!is.na(Index)) %>% 
-  group_by(Code,Index,Name,code,group_name) %>% 
+  group_by(Code,Index,Name,FG) %>% 
   summarise(totcatch=sum(totcatch)) %>% 
   ungroup()
+  
+  ## REMINDER TO FIX FLEET 27 (MEXICO GENERIC) LATER!
 
 # join and calculate F by fleet
 Finit <- Atlantis_catch %>% 
-  left_join(bio,by="code") %>% 
+  left_join(bio,by="FG") %>% 
+  filter(!is.na(biomass)) %>% 
   # exploitation rate (proportion harvested in 2013)
   mutate(mu= totcatch/biomass) %>% 
   # convert to F (Atlantis User Guide Part II page 15)
@@ -43,24 +48,25 @@ Finit <- Atlantis_catch %>%
 
 # make a block of text for pasting into Harvest.prm
 harvest_block <- Finit %>% 
-  dplyr::select(Index,code,mFC) %>% 
+  dplyr::select(Index,FG,mFC) %>% 
   # fill in missing Index/code combos with zeroes
-  complete(Index=full_seq(c(1,54),1),code,fill=list(mFC=0)) %>% 
-  mutate(prmName=paste('mFC',code,sep="_")) %>% 
+  complete(Index=full_seq(c(1,54),1),FG,fill=list(mFC=0)) %>% 
+  mutate(prmName=paste('mFC',FG,sep="_")) %>% 
   arrange(prmName,Index) %>% 
   dplyr::select(prmName,Index,mFC) %>% 
   pivot_wider(names_from="Index",values_from = "mFC")
 
 catch_block <- Finit %>% 
-  dplyr::select(Index,code,totcatch) %>% 
+  dplyr::select(Index,FG,totcatch) %>% 
   # fill in missing Index/code combos with zeroes
-  complete(Index=full_seq(c(1,54),1),code,fill=list(totcatch=0)) %>% 
-  mutate(prmName=paste('catch',code,sep="_")) %>% 
+  complete(Index=full_seq(c(1,54),1),FG,fill=list(totcatch=0)) %>% 
+  mutate(prmName=paste('catch',FG,sep="_")) %>% 
   arrange(prmName,Index) %>% 
   dplyr::select(prmName,Index,totcatch) %>% 
   pivot_wider(names_from="Index",values_from = "totcatch")
 
 options(scipen = 0)
 # write!
-write.table(harvest_block,here::here('data','atlantis','groundfish_mFC_by_fleet.txt'),quote=F,row.names=F)
-write.table(catch_block,here::here('data','atlantis','groundfish_catch_by_fleet.txt'),quote=F,row.names=F )
+write.table(harvest_block,here::here('data','atlantis','mFC_by_fleet.txt'),quote=F,row.names=F)
+write.table(catch_block,here::here('data','atlantis','catch_by_fleet.txt'),quote=F,row.names=F )
+write_csv(Finit,here('data','atlantis','Fcalc_by_fleet.csv'))

@@ -16,6 +16,7 @@ library(lubridate)
 library(sf)
 library(here)
 library(Hmisc)
+library(visreg)
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
 ```
@@ -285,6 +286,159 @@ model_species <- function(spp,data,use_substrate=T){
     out$weight=model_weights
   }
 
+  out
+}
+```
+
+# Model Fit Statistics and Visualization
+
+Functions to visualize and save model fits.
+
+## Model Ensemble Table
+
+```{r}
+report_model_ensemble <- function(model_df){
+  weights_table <- model_df %>% dplyr::select(-model,-model_cv,-include_substrate,-model_num)
+  convergence <- purrr::map_int(model_df$model,function(m){m$model$convergence})
+  weights_table$Convergence <- convergence
+  range_params <- purrr::map_dbl(model_df$model,function(m){
+    tidy(m,effects='ran_pars') %>% slice(1) %>% pull(estimate)
+  })
+  weights_table$sumloglik <- purrr::map_dbl(model_df$model_cv,pluck("sum_loglik"))
+  weights_table$Matern_range <- range_params
+  weights_table
+  # model_params <- purrr::map(model_df$model,tidy,effects=c("fixed"))
+  # knitr::kable(weights_table,digits = 3,col.names = c("Group","Spatial RF","Env Spline","Weight","Convergence","Log density","Matern Range")) %>% print()
+  # purrr::walk(model_params,function(t){knitr::kable(t,digits=3) %>% print()})
+}
+```
+
+## Normal QQ plot
+
+```{r}
+make_qq_plots <- function(model_df){
+  spp <- model_df %>% pluck("model",1,'data','species') %>% unique()
+  sppdat <- prepare_species(trawl_roms_utm,spp)
+  
+  qqp <- purrr::map(model_df$model,function(m){
+    r <- residuals(m)[1:nrow(sppdat),1] %>% as_tibble()
+    resids <- sppdat %>% mutate(resid=r$value)
+    qq <- ggplot(resids,aes(sample=resid))+stat_qq()+stat_qq_line()+
+      labs(x="Expected",y="Observed")+coord_equal()+
+      theme(panel.background = element_rect(color='black'))
+    qq
+  })
+  cowplot::plot_grid(plotlist=qqp,nrow=1,labels=c(1:4))
+}
+```
+
+## DHARMAa Residuals
+
+```{r}
+# adopted from Commander et al. shadow model paper
+get_dharma_resid <- function(obj) {
+    sim <- simulate(obj, nsim = 500L)
+    pred_fixed <- obj$family$linkinv(predict(obj, newdata = NULL)$est_non_rf)
+    DHARMa::createDHARMa(
+      simulatedResponse = sim,
+      observedResponse = obj$data$cpue_kg_km2,
+      fittedPredictedResponse = pred_fixed
+    )
+}
+plot_dharma_resid <- function(res, main = "") {
+    gap::qqunif(
+      res$scaledResiduals,
+      pch = 19,
+      bty = "n",
+      logscale = FALSE,
+      col = "#00000010",
+      cex = 0.5,
+      ann = FALSE, xlim = c(0, 1), ylim = c(0, 1)
+    )
+    mtext(side = 3, text = main, line = 0.5, cex = 0.8)
+    mtext(side = 1, line = 2, text = "Expected", cex = 0.8)
+    mtext(side = 2, line = 2, text = "Observed", cex = 0.8)
+    box()
+}
+```
+
+
+## Single Model Environmental Niche
+
+```{r}
+plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
+  
+  # use visreg to do the fit for us
+  x <- visreg(fit=fit,xvar=predvar,scale='response',plot=FALSE)
+  datfit <- x$fit
+  
+  # if the response is not substrate, have to back-transform the predictor variable
+  if(predvar=="prop_hard_mixed"){
+    out = datfit %>% 
+      ggplot(aes(prop_hard_mixed,visregFit,ymax=visregUpr,ymin=visregLwr))+
+      geom_ribbon(fill='gray70')+
+      geom_line()+
+      labs(x=predvar,y="CPUE")+
+      theme(panel.border = element_rect(color='black',fill=NA))
+    
+  } else {
+      # find the mean and SD of the original predictor to back-transform
+      original_predvar = str_sub(predvar,end=-6L)
+      
+      predvar_dat=fit$data %>% dplyr::select(all_of(original_predvar)) %>% pluck(1)
+      mean_predvar <- mean(predvar_dat,na.rm=T)
+      sd_predvar <- sd(predvar_dat,na.rm=T)
+      predvar_trans <- (datfit %>% pluck(predvar))*sd_predvar+mean_predvar
+      
+      # add the transformation to the fitted relationship
+      datfit <- datfit %>% 
+        mutate(envtrans=predvar_trans)
+      
+      # output plot
+      out = datfit %>% 
+        ggplot(aes(envtrans,visregFit,ymax=visregUpr,ymin=visregLwr))+
+        geom_ribbon(fill='gray70')+
+        geom_line()+
+        labs(x=original_predvar,y="CPUE")+
+        theme(panel.border = element_rect(color='black',fill=NA))
+  }
+  
+  out
+
+}
+
+```
+
+```{r}
+plot_all_env_relationships <- function(m){
+  
+  form <-m$formula %>% pluck(1) %>% as.character() %>% pluck(3)
+  
+  if(grepl('depth_trawl_norm',form)){
+    depth_relationship <- plot_single_env_relationship(m,predvar="depth_trawl_norm")+
+      labs(x="Depth (m)")
+  } else depth_relationship=NULL
+  
+  if(grepl('prop_hard_mixed',form)){
+    hab_relationship <- plot_single_env_relationship(m,predvar="prop_hard_mixed")+
+      labs(x="Proportion Hard Substrate")
+  } else hab_relationship=NULL
+    
+  if(grepl('temp_roms',form)){
+    temp_relationship <- plot_single_env_relationship(m,predvar="mean_temp_roms_30_norm")+
+      labs(x="Bottom Temperature")
+  } else temp_relationship=NULL
+  
+  if(grepl('mean_oxygen_roms_30_norm',form)){
+    oxy_relationship <- plot_single_env_relationship(m,predvar="mean_oxygen_roms_30_norm")+
+      labs(x="Bottom Oxygen")
+  } else oxy_relationship=NULL
+  
+  if(!grepl('depth_trawl_norm',form) & !grepl('prop_hard_mixed',form)){
+    out <- cowplot::plot_grid(temp_relationship,oxy_relationship,nrow=1)
+  } else{
+    out <- cowplot::plot_grid(temp_relationship,oxy_relationship,depth_relationship,hab_relationship,nrow=2) 
+  }
   out
 }
 ```
@@ -565,7 +719,7 @@ map_multispp_diff <- function(multi_ens,yr1=2020,yr2=2100,qlower=0.05,qupper=0.9
     geom_sf(data=coast,col='gray50')+
     coord_sf(datum=NA)+
     xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
-    labs(x="",y="",fill="# Species",title='')+
+    labs(x="",y="",fill="Change in\n# Species",title='')+
     theme(legend.position=c(0.55,0.6))
 
   if(show_footprints) out <- out + geom_sf(data=footprints,fill=NA,col='black')
@@ -1131,6 +1285,80 @@ rasterize_affinities <- function(ens_preds,template_raster,return_what="plot"){
 }
 ```
 
+```{r}
+# rasterize_affinities_fit <- function(m,return_what="plot"){
+#   # range of environmental data in the training data
+#   hist_roms_sf <- m %>% pluck('data') %>%
+#     st_as_sf(coords=c('mean_temp_roms_30','mean_oxygen_roms_30'))
+#   tempr <- raster::raster(raster::extent(st_bbox(hist_roms_sf)[c(1,3,2,4)]),nrows=150,ncol=100)
+#   env_preds <- tempr %>% rasterToPoints() %>% as_tibble() %>% set_names(c('mean_temp_roms_30','mean_oxygen_roms_30')) %>% 
+#     mutate(across(everything(),~(scale(.) %>% as.vector()),.names="{.col}_norm"))
+#   
+#   # lats and lons for predictions
+#   set.seed(41389)
+#   latlons <- m$data %>% distinct(longitude,latitude) %>% slice_sample(n=100)
+#   lll <- purrr::map_dfr(seq_len(nrow(env_preds)), ~latlons) %>% 
+#     mutate(n=rep(1:nrow(env_preds),each=100)) %>% 
+#     group_split(n)
+#   yrs <- m$extra_time
+#   yrs <- rep(yrs,times=ceiling(nrow(env_preds)*nrow(latlons)/length(yrs)))[1:(nrow(env_preds)*nrow(latlons))]
+#   
+#   nd <- env_preds %>% 
+#     mutate(ll=lll) %>% 
+#     unnest(cols=c(ll)) %>% 
+#     mutate(year=as.double(yrs))
+#   
+#   preds <- predict(m,newdata=nd,type='response')
+#   ul <- quantile(preds$abun,0.99)
+#   ll <- quantile(preds$abun,0.01)
+#   dsf <- preds %>% 
+#     filter(abun>ll,abun<ul) %>%
+#     mutate(rel_abun=abun/max(abun,na.rm=T)) %>% 
+#     st_as_sf(coords=c("mean_temp_roms_30","mean_oxygen_roms_30"))
+#   spp_r <- dsf %>% raster::rasterize(template_raster,field="rel_abun",fun=mean)
+#   spp_df <- spp_r %>% raster::rasterToPoints() %>% as_tibble() %>% set_names(c('temp','oxy','abun')) %>%
+#     mutate(species=unique(preds$species))
+#   # spp_df
+#   
+#   # make the plot
+#     
+#   mainp <- spp_df %>% 
+#     ggplot(aes(temp,oxy,fill=abun))+
+#     geom_tile()+
+#     scale_fill_viridis(na.value='white',name="Relative\nAbundance",breaks=c(0,0.25,0.5,0.75,1))+
+#     labs(x="",y="",title='')+
+#     theme(panel.background = element_rect(fill='white'),
+#           # panel.background = element_rect(fill=viridis_pal()(1)),
+#           # legend.position = c(0.1,0.7),
+#           # legend.background = element_rect(fill='white'),
+#           panel.grid.major = element_blank(),
+#           panel.grid.minor=element_blank())
+#   
+#   if(return_what=="legend") return(get_legend(mainp))
+#   else{
+#       
+#   m1 <- spp_df %>% group_by(temp) %>% summarise(m=sum(abun)) %>% 
+#     ggplot(aes(temp,m))+geom_area(fill='grey50')+theme_void()+
+#     theme(plot.margin = margin(0,-0.1,-0.1,0,'cm'))
+#   
+#   m2 <- spp_df %>% group_by(oxy) %>% summarise(m=sum(abun)) %>% 
+#     ggplot(aes(oxy,m))+geom_area(fill='grey50')+theme_void()+coord_flip()+
+#     theme(plot.margin = margin(0,0,0,0,'cm'))
+#   
+#   col1 <- plot_grid(m1,NULL,mainp+theme(legend.position='none',plot.margin = margin(0,0,0,0,'pt')),nrow=3,align='v',axis='lr',rel_heights = c(0.2,-0.07,1))
+#   # grobs <- ggplotGrob(row1)
+#   # g <- grid::rectGrob(gp = grid::gpar(col=0))
+#   # row1 <- plot_grid(NULL,m1,NULL,nrow=1,rel_widths = c(0.5,5,1.15))
+#   col2 <- plot_grid(NULL,m2,NULL,nrow=3,rel_heights = c(0.25,1,0.15))
+#   out <- plot_grid(col1,col2,ncol=2,rel_widths =c(1,0.25))
+#   # out <- plot_grid(m1,NULL,mainp+rremove('legend')+rremove(),m2,ncol=2,align='hv',rel_widths = c(1,0.25),rel_heights = c(0.25,1))
+#   out
+#   }
+# 
+# }
+```
+
+
 ## Environmental Affinities Ellipses
 
 Find weighted mean and SD of species' temperature and oxygen tolerances
@@ -1165,30 +1393,32 @@ weighted_affinities <- function(ens_preds,yrs=c(1980:2022)){
 # ens_preds =four_spp;yr_vec=1980:2022
 require(concaveman)
 
-make_spp_concave_hull <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=5,threshold=0.05){
+make_spp_concave_hull <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=2,lt=0,threshold=0.05,esm='ipsl'){
+  vartemp <- paste0("mean_bt_30d_",esm)
+  varoxy <- paste0("mean_oxy_bottom_30d_",esm)
   df <- ens_preds %>% 
     filter(year %in% yr_vec) %>%
     mutate(mean_est=exp(mean_est)) %>%
     filter(mean_est>=quantile(mean_est,threshold)) %>% 
     ungroup() %>% 
-    dplyr::select(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+    dplyr::select(all_of(c(vartemp,varoxy))) %>% 
     as.matrix()
     # st_as_sf(coords=c("mean_bt_30d_ipsl","mean_oxy_bottom_30d_ipsl"))
   p <- df %>% 
-    concaveman(concavity = concavity) %>% 
+    concaveman(concavity = concavity,length_threshold = lt) %>% 
     as_tibble() %>% 
     mutate(spp=sppname)
   p
 }
 
-affinities_ellipses <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold=0.25,return_what='df'){
+affinities_ellipses <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold=0.25,lt=0,return_what='df'){
   df <- ens_preds %>% 
     filter(year %in% yr_vec) %>%
     mutate(mean_est=exp(mean_est)) %>%
     dplyr::select(species,year,mean_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
     group_by(species) %>% 
     nest(data=c(year,mean_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl)) %>% 
-    mutate(p=map(data,make_spp_concave_hull,sppname=species,concavity=concavity,threshold=threshold)) %>% 
+    mutate(p=map(data,make_spp_concave_hull,sppname=species,concavity=concavity,threshold=threshold,lt=lt)) %>% 
     ungroup()
   
   ps <- do.call(rbind,df$p) %>% 

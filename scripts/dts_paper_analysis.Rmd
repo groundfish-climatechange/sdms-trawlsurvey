@@ -74,7 +74,6 @@ for(i in 1:length(spp_to_model)){
   print(paste(s,'models finished'))
 }
 ```
-
 ## Make Ensemble Predictions
 
 We project across all 3 ESMs, weighting each equally
@@ -258,22 +257,82 @@ four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>%
          est5=purrr::map_dbl(data,quantile,probs=0.05),
          est95=purrr::map_dbl(data,quantile,probs=0.95))
 
-
 ```
 
-### Calculate Center-of-Gravity
+## Model Fit Visualization
 
-```{r,eval=F}
-#ipsl
-# dover_cog_ipsl <- make_cog(dover_models,gcm = 'ipsl',what="dat")
-# sable_cog_ipsl <- make_cog(sable_models,gcm = 'ipsl',what="dat")
-# ss_cog_ipsl <- make_cog(ss_models,gcm = 'ipsl',what="dat")
-# ls_cog_ipsl <- make_cog(ls_models,gcm = 'ipsl',what="dat")
-# 
-# write_rds(dover_cog,here('model output','dts paper','dover_cog_ipsl.rds'))
-# write_rds(sable_cog,here('model output','dts paper','sable_cog_ipsl.rds'))
-# write_rds(ss_cog,here('model output','dts paper','ss_cog_ipsl.rds'))
-# write_rds(ls_cog,here('model output','dts paper','ls_cog_ipsl.rds'))
+### Model Tables
+
+```{r}
+dover_fit_table <- report_model_ensemble(dover_models)
+sable_fit_table <- report_model_ensemble(sable_models)
+ss_fit_table <- report_model_ensemble(ss_models)
+ls_fit_table <- report_model_ensemble(ls_models)
+write_csv(dover_fit_table,here('model output','dts paper','dover_fit_table.csv'))
+write_csv(sable_fit_table,here('model output','dts paper','sable_fit_table.csv'))
+write_csv(ss_fit_table,here('model output','dts paper','ss_fit_table.csv'))
+write_csv(ls_fit_table,here('model output','dts paper','ls_fit_table.csv'))
+```
+
+### QQ plots
+
+```{r}
+doverqq = make_qq_plots(dover_models)
+sableqq = make_qq_plots(sable_models)
+ssqq = make_qq_plots(ss_models)
+lsqq = make_qq_plots(ls_models)
+ggsave(here('model output','dts paper','dover_qq.png'),doverqq,h=3,w=8)
+ggsave(here('model output','dts paper','sable_qq.png'),sableqq,h=3,w=8)
+ggsave(here('model output','dts paper','ss_qq.png'),ssqq,h=3,w=8)
+ggsave(here('model output','dts paper','ls_qq.png'),lsqq,h=3,w=8)
+```
+
+
+### Environmental Niches
+
+```{r,fig.width=8}
+make_fitted_env_niches <- function(simsdf,gcm,sppname){
+  d <- simsdf %>% 
+    filter(esm==gcm) %>%
+    pivot_longer(contains('sim'),names_to="sim",values_to="est") %>% 
+    group_by(year,longitude,latitude,lat,lon,depth_m,esm) %>% 
+    summarise(mean_est=mean(est,na.rm=T)) %>% 
+    ungroup() %>% 
+    left_join(roms,by=c("year", "longitude", "latitude", "lat", "lon"))
+  niches <- purrr::map_df(c(0.05,0.5,0.75,0.95),function(thresh){
+    make_spp_concave_hull(ens_preds=d,yr_vec=1985:2010,sppname=sppname,threshold=thresh,esm=gcm,lt=50,concavity = 3) %>% 
+      mutate(threshold=thresh)
+  })
+  niches_plot <- ggplot(niches,aes(V1,V2,color=as.factor(threshold)))+
+    geom_polygon(fill=NA,size=1.25)+
+    scale_x_continuous(limits=c(0,14),breaks=seq(0,14,by=2))+
+    scale_y_continuous(limits=c(0,280),breaks=seq(0,250,by=50))+
+    labs(y="Bottom Oxygen (mmol/m3)",x="Bottom Temperature",color="Quantile of\nCPUE values",
+       title=paste(tools::toTitleCase(sppname),toupper(gcm),"\n1985-2010"))+
+    theme(legend.position=c(0.25,0.7),
+          panel.background = element_rect(color='black'))
+  niches_plot
+}
+```
+
+
+```{r}
+dover_niches <- purrr::map(c('gfdl','ipsl','hadl'),make_fitted_env_niches,sppname='dover sole',
+                           simsdf=dover_ens_separate) %>% plot_grid(plotlist=.,nrow=1)
+
+sable_niches <- purrr::map(c('gfdl','ipsl','hadl'),make_fitted_env_niches,sppname='sablefish',
+                           simsdf=sable_ens_separate) %>% plot_grid(plotlist=.,nrow=1)
+
+ss_niches <- purrr::map(c('gfdl','ipsl','hadl'),make_fitted_env_niches,sppname='shortspine',
+                        simsdf=ss_ens_separate) %>% plot_grid(plotlist=.,nrow=1)
+
+ls_niches <- purrr::map(c('gfdl','ipsl','hadl'),make_fitted_env_niches,sppname='longspine',
+                        simsdf=ls_ens_separate) %>% plot_grid(plotlist=.,nrow=1)
+ggsave(here('model output','dts paper','dover_envir_niche.png'),dover_niches,h=6,w=8)
+ggsave(here('model output','dts paper','sable_envir_niche.png'),sable_niches,h=6,w=8)
+ggsave(here('model output','dts paper','ss_envir_niche.png'),ss_niches,h=6,w=8)
+ggsave(here('model output','dts paper','ls_envir_niche.png'),ls_niches,h=6,w=8)
+
 ```
 
 # Manuscript Figures
@@ -325,7 +384,7 @@ Overlap map (count number of species in each cell). This figure shows the number
 ```{r,fig.width=6,fig.height=8}
 
 multimapdiff <- map_multispp_diff(four_spp,qlower=0.75,qupper=1)
-
+multimapdiff
 ```
 
 Finish Figure 1
@@ -367,6 +426,13 @@ fourspp_reldist_change <- fourspp_reldist_hist %>%
   # summarise(meanchange=mean(change),
   #           change5=quantile(change,0.05),
   #           change95=quantile(change,0.95))
+```
+```{r}
+footprint_dist_to_shore <- footprints %>% 
+  st_join(roms_dist_to_coast %>% st_as_sf(coords=c('longitude','latitude'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")) %>%
+  st_set_geometry(NULL) %>% 
+  group_by(port_name) %>% 
+  summarise(mean_km_to_coast=mean(km_to_coast))
 ```
 
 Make the plot
@@ -517,7 +583,7 @@ Make environmental affinities ellipses
 
 ```{r}
 library(ggnewscale)
-aff_polys<-affinities_ellipses(four_spp,yr_vec=1985:2010,concavity=7,threshold=0.25)
+aff_polys<-affinities_ellipses(four_spp,yr_vec=1985:2010,concavity=5,threshold=0.25,lt=50)
 # plotting order for colors
 polys_and_footprints <- ggplot()+
   geom_polygon(data=aff_polys,aes(V1,V2,col=spp_plotting),fill=NA,size=1,linetype=3)+
@@ -563,7 +629,7 @@ ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,h=8,w
 
 Calculate GIC for each species combination, year, simulation, and ESM
 
-```{r}
+```{r,eval=F}
 tic("Ran GIC for sims")
 dover_sable_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
   mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=dover_ens_separate,sims_df2=sable_ens_separate))
@@ -583,10 +649,11 @@ sable_ls_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
 ss_ls_gic<-crossing(gcm=c('gfdl','ipsl','hadl'),simnum=1:100) %>%
   mutate(gic=purrr::pmap(list(gcm,simnum),gic_sims,sims_df1=ss_ens_separate,sims_df2=ls_ens_separate))
 toc()
+# ~ 6 minutes total
 ```
 Calculate LIC and Schoener's D.
 
-```{r}
+```{r,eval=F}
 tic("Ran LIC and D for sims")
 dover_sable_lic <- lic_D_sims(dover_ens_separate,sable_ens_separate)
 dover_ss_lic <- lic_D_sims(dover_ens_separate,ss_ens_separate)
@@ -595,10 +662,11 @@ sable_ss_lic <- lic_D_sims(sable_ens_separate,ss_ens_separate)
 sable_ls_lic <- lic_D_sims(sable_ens_separate,ls_ens_separate)
 ss_ls_lic <- lic_D_sims(ss_ens_separate,ls_ens_separate)
 toc()
+# ~5 minutes total
 ```
 Join and plot
 
-```{r}
+```{r,eval=F}
 dover_sable_overlap <- dover_sable_gic %>% 
   unnest(cols=c(gic)) %>% 
   mutate(year=rep(1980:2100,300)) %>% 
@@ -631,40 +699,59 @@ ss_ls_overlap <- ss_ls_gic %>%
             by=c('gcm'='esm','simnum','year'))
 ```
 
+```{r,eval=F}
+# save overlap metrics
+overlaps_all <- list(dover_sable_overlap,dover_ss_overlap,dover_ls_overlap,sable_ss_overlap,sable_ls_overlap,ss_ls_overlap) %>% set_names(c('dover_sable','dover_ss','dover_ls','sable_ss','sable_ls','ss_ls'))
+write_rds(overlaps_all,here('model output','dts paper','overlap_metrics_all.rds'))
+```
+
+```{r}
+# Load
+overlaps_all <- read_rds(here('model output','dts paper','overlap_metrics_all.rds'))
+```
+
+
 ```{r}
 # make a good color palette
 # 3 sets of 3 colors for the 3 ESMs and 3 metrics
-#"#790149","#9F0162","#EF0096",
-overlaps_cols <- c("#005745","#009175","#00CBA7",
-                   "#7E0018","#CD022D","#FF6E3A",
-                   "#00306F","#005FCC","#00C2F9")
-overlap_plot_foo <- function(overlap_df,show_legend=FALSE){
+overlaps_cols <- c("#009175","#7E0018","#00C2F9")
+# overlaps_cols <- c("#005745","#009175","#00CBA7",
+#                    "#7E0018","#CD022D","#FF6E3A",
+#                    "#00306F","#005FCC","#00C2F9")
+overlap_plot_foo <- function(overlap_df,show_legend=FALSE,show_axes=FALSE){
   p <- overlap_df %>% 
     filter(year>2019) %>% 
     pivot_longer(cols=c('gic','lic','D'),names_to='metric',values_to='value') %>% 
     unite(esm_metric,gcm,metric,remove=F) %>% 
     unite(sim_esm_metric,simnum,esm_metric,remove=F) %>% 
-    ggplot(aes(year,value,color=esm_metric))+
+    mutate(esm_metric=toupper(esm_metric)) %>% 
+    ggplot(aes(year,value,color=toupper(gcm),linetype=toupper(metric)))+
     # geom_point(alpha=0.2,size=0.7)+
     geom_line(aes(group=sim_esm_metric),color='gray80')+
     geom_smooth(se=F)+
     scale_color_manual(values=overlaps_cols)+
-    labs(x="Year",y="Overlap",color="Metric")+
+    scale_linetype_manual(values=c(1,3,4))+
+    ylim(0,1)+
+    labs(x="Year",y="Overlap",color="ESM",linetype="Metric")+
     theme(panel.background = element_rect(color="black",fill=NA),
           legend.position = 'bottom')
-  if(!show_legend) p+guides(color='none')
-  else p
+  out=p
+  if(!show_legend) out=out+guides(color='none',linetype="none")
+  if(!show_axes) out= out+theme(axis.title.y = element_blank())
+  out
 }
+```
 
-dover_sable_overlap_plot <- overlap_plot_foo(dover_sable_overlap,show_legend = T)
-dover_ss_overlap_plot <- overlap_plot_foo(dover_ss_overlap)
-dover_ls_overlap_plot <- overlap_plot_foo(dover_ls_overlap)
-sable_ss_overlap_plot <- overlap_plot_foo(sable_ss_overlap)
-sable_ls_overlap_plot <- overlap_plot_foo(sable_ls_overlap)
-ss_ls_overlap_plot <- overlap_plot_foo(ss_ls_overlap)
+```{r}
+dover_sable_overlap_plot <- overlap_plot_foo(overlaps_all$dover_sable,show_legend = T,show_axes=T)
+dover_ss_overlap_plot <- overlap_plot_foo(overlaps_all$dover_ss,show_axes = T)
+dover_ls_overlap_plot <- overlap_plot_foo(overlaps_all$dover_ls)
+sable_ss_overlap_plot <- overlap_plot_foo(overlaps_all$sable_ss)
+sable_ls_overlap_plot <- overlap_plot_foo(overlaps_all$sable_ls)
+ss_ls_overlap_plot <- overlap_plot_foo(overlaps_all$ss_ls)
 overlaps_legend <- get_legend(dover_sable_overlap_plot)
 
-r1 <- plot_grid(dover_sable_overlap_plot+guides(color='none'),sable_ss_overlap_plot,sable_ls_overlap_plot,dover_ss_overlap_plot,dover_ls_overlap_plot,ss_ls_overlap_plot,nrow=2,labels='auto')
+r1 <- plot_grid(dover_sable_overlap_plot+guides(color='none',linetype='none'),sable_ss_overlap_plot,sable_ls_overlap_plot,dover_ss_overlap_plot,dover_ls_overlap_plot,ss_ls_overlap_plot,nrow=2,labels='auto',vjust=1)
 r2=plot_grid(NULL,NULL,overlaps_legend,NULL,NULL,nrow=1)
 
 overlaps_all_fig4 <- plot_grid(r1,r2,nrow=2,rel_heights = c(1,0.2))
@@ -742,6 +829,7 @@ allspp_reldens <- purrr::map2_df(list(dover_ens_separate,sable_ens_separate,ss_e
 
 reldens_fig <- allspp_reldens %>% 
   dplyr::select(sim,ESM,spp_plotting,delta_perc,port_name) %>% 
+  mutate(spp_plotting=paste0('~',spp_plotting,'~')) %>% 
   unite(fct,spp_plotting,port_name,sep="\n",remove=F) %>% 
   mutate(fct=factor(fct,levels=unique(fct))) %>% 
   ggplot(aes(delta_perc,fill=ESM))+
