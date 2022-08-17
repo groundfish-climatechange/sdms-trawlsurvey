@@ -1,0 +1,130 @@
+---
+title: "SDMs and Climate Novelty"
+author: "Owen Liu"
+date: '2022-08-17'
+output: html_document
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=12,color="black"),
+        legend.text = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=12,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+# Purpose
+
+Compare outputs from projected species distribution models to measures of climate novelty calculated using hypervolumes. In short, we ask: in the future, where will projected species distributions overlap with novel climates (where, in this case, novel climate means a novel combination of bottom oxygen and bottom temperature encountered in a given spatial cell).
+
+# Load Novelty Data
+
+We have measures of projected novelty for each year from 2011-2100, relative to a temperature/oxygen hypervolume created for the period 1980-2010. The novelty calculation was performed separately for the Hadley, GFDL, and IPSL downscaled ROMS models for the California Current (see Pozo-Buil et al. 2021)
+
+```{r}
+novelty <- read_rds(here('model output','climate novelty','novelty_inclusion_3esms.rds'))
+```
+
+```{r}
+# get area of roms cells
+# roms_fls <- list.files(here('data','hypervolumes','projection rasters'),full.names=T)
+# roms_area <- terra::cellSize(rast(roms_fls[[1]]),unit='km') %>% 
+#   as.data.frame(cells=T)
+# write_rds(roms_area,here('data','roms_cell_area_km2.rds'))
+roms_area <- read_rds(here('data','roms_cell_area_km2.rds'))
+```
+
+And here is some example projected species data for comparison
+
+```{r}
+dogfish <- read_rds(here('Janelle','models_owen','pacific spiny dogfish','projection_3ESMS.rds'))
+```
+
+Take a look at the data
+```{r}
+glimpse(novelty)
+glimpse(dogfish)
+```
+
+# Join Function
+
+Write a function to join together the novelty data and the species distribution projections, while keeping track of the 3 ROMS models
+
+```{r}
+join_novelty_sdm <- function(novelty_df,sdm_df){
+  sdm_df <- sdm_df %>% 
+    dplyr::select(-est_non_rf,est_rf,epsilon_st)
+  novelty_long <- novelty_df %>% 
+    pivot_longer(contains('novel'),names_to='esm',values_to='is_novel') %>% 
+    mutate(esm=str_replace(esm,'novel_',''))
+  novelty_sdm_join <- sdm_df %>% 
+    left_join(novelty_long,by=c('lon','lat','year','esm')) %>% 
+    filter(year>2010)
+  novelty_sdm_join
+}
+```
+
+```{r}
+dogfish_novelty <- join_novelty_sdm(novelty,dogfish)
+glimpse(dogfish_novelty)
+```
+
+# Summary Function
+
+We can write another function to summarize the data by year, calculating what percent of the species' distribution (e.g., number of cells or proportion of total CPUE) is projected to occur in novel climates.
+
+```{r}
+summarise_sdm_novelty <- function(sdm_novelty_df){
+  sdm_novelty_summ <- sdm_novelty_df %>% 
+    # bring in area of ROMS cells to calculate biomass
+    left_join(roms_area,by=c('roms_cell'='cell')) %>% 
+    mutate(biomass_kg=exp(est)*area) %>% 
+    # then summarise by year and ROMS model
+    group_by(esm,year) %>% 
+    summarise(biomass_novel=sum(biomass_kg[is_novel]),
+              total_biomass=sum(biomass_kg),
+              novel_cells=sum(is_novel),
+              total_cells=n()) %>% 
+    mutate(prop_novel_biomass=biomass_novel/total_biomass,
+           prop_novel_cells=novel_cells/total_cells)
+  
+  sdm_novelty_summ
+}
+```
+
+```{r}
+dogfish_novelty_summ <- summarise_sdm_novelty(dogfish_novelty)
+```
+
+# Visualize
+
+```{r}
+# total biomass in novel climates
+dogfish_novelty_biomass_novel_ts <- dogfish_novelty_summ %>% 
+  ggplot(aes(year,biomass_novel/1000,color=esm))+
+  geom_line(size=1.5)+
+  labs(x="Year",y="Biomass in Novel Climate (MT)",color="Model")
+
+# proportion of biomass in novel climates
+dogfish_novelty_propnovel_ts <- dogfish_novelty_summ %>% 
+  ggplot(aes(year,prop_novel_biomass,color=esm))+
+  geom_line(size=1.5)+
+  ylim(0,1)+
+  labs(x="Year",y="Proportion of Biomass in Novel Climate",color="Model")
+
+dogfish_novelty_biomass_novel_ts
+dogfish_novelty_propnovel_ts
+```
+
+
+
