@@ -283,7 +283,49 @@ gfdl_ts <- inclusion_ts(gfdl_proj,plot=F) %>% mutate(esm='gfdl')
 ipsl_ts <- inclusion_ts(ipsl_proj,plot=F) %>% mutate(esm='ipsl')
 had_ts <- inclusion_ts(had_proj,plot=F) %>% mutate(esm='hadley')
 ```
+
+# To Data Frame
+
+```{r}
+# roms cell matching key
+roms_ll <- read_rds(here::here('data','roms_latlon_key_topleft_start.rds')) %>% 
+  mutate(roms_cell=row_number())
+
+rast_to_df <- function(proj_rasters){
+  map2_df(2011:2100,proj_rasters,function(y,r) {
+    r %>% pluck('rast') %>% 
+      as.data.frame(cells=T) %>% 
+      left_join(roms_ll,by=c('cell'='roms_cell'),keep=T) %>% 
+      dplyr::select(roms_cell,lat,lon,incl=bt) %>% 
+      mutate(year=y) %>% 
+      mutate(novel=incl==0)
+  })
+}
+```
+
+```{r}
+gfdl_df <- rast_to_df(gfdl_proj)%>% 
+  rename(novel_gfdl=novel) %>% 
+  dplyr::select(roms_cell,lon,lat,year,novel_gfdl)
+ipsl_df <- rast_to_df(ipsl_proj) %>% 
+  rename(novel_ipsl=novel) %>% 
+  dplyr::select(roms_cell,lon,lat,year,novel_ipsl)
+had_df <- rast_to_df(had_proj) %>% 
+  rename(novel_hadl=novel) %>% 
+  dplyr::select(roms_cell,lon,lat,year,novel_hadl)
+# combine
+esms_novelty <- gfdl_df %>% 
+  left_join(ipsl_df,by=c('roms_cell','lon','lat','year')) %>% 
+  left_join(had_df,by=c('roms_cell','lon','lat','year'))
+```
+
+
 # Save
+```{r}
+write_rds(esms_novelty,here('model output','climate novelty','novelty_inclusion_3esms.rds'))
+```
+
+
 ```{r}
 novelty_3ESMs <- bind_rows(gfdl_ts,ipsl_ts,had_ts) %>% 
   ggplot(aes(yr,prop,col=esm))+

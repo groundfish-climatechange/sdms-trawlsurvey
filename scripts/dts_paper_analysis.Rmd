@@ -74,6 +74,7 @@ for(i in 1:length(spp_to_model)){
   print(paste(s,'models finished'))
 }
 ```
+
 ## Make Ensemble Predictions
 
 We project across all 3 ESMs, weighting each equally
@@ -251,12 +252,11 @@ four_spp <- list(dover_ens_all,sable_ens_all,ss_ens_all,ls_ens_all) %>% bind_row
   left_join(roms,by = c("year", "longitude", "latitude", "lat", "lon"))
 
 # with separate sims
-four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>% bind_rows() %>% 
-  # add summary columns
-  mutate(mean_est=purrr::map_dbl(data,mean),
-         est5=purrr::map_dbl(data,quantile,probs=0.05),
-         est95=purrr::map_dbl(data,quantile,probs=0.95))
-
+# four_spp_sims <- list(dover_ens_sims,sable_ens_sims,ss_ens_sims,ls_ens_sims) %>% bind_rows() %>% 
+#   # add summary columns
+#   mutate(mean_est=purrr::map_dbl(data,mean),
+#          est5=purrr::map_dbl(data,quantile,probs=0.05),
+#          est95=purrr::map_dbl(data,quantile,probs=0.95))
 ```
 
 ## Model Fit Visualization
@@ -382,7 +382,6 @@ footprints_map <- ggplot()+
 Overlap map (count number of species in each cell). This figure shows the number of species out of four in each grid cell that are at or above their median CPUE (across all cells) for that year.
 
 ```{r,fig.width=6,fig.height=8}
-
 multimapdiff <- map_multispp_diff(four_spp,qlower=0.75,qupper=1)
 multimapdiff
 ```
@@ -742,7 +741,7 @@ overlap_plot_foo <- function(overlap_df,show_legend=FALSE,show_axes=FALSE){
 }
 ```
 
-```{r}
+```{r,fig.width=8,fig.height=8}
 dover_sable_overlap_plot <- overlap_plot_foo(overlaps_all$dover_sable,show_legend = T,show_axes=T)
 dover_ss_overlap_plot <- overlap_plot_foo(overlaps_all$dover_ss,show_axes = T)
 dover_ls_overlap_plot <- overlap_plot_foo(overlaps_all$dover_ls)
@@ -756,12 +755,32 @@ r2=plot_grid(NULL,NULL,overlaps_legend,NULL,NULL,nrow=1)
 
 overlaps_all_fig4 <- plot_grid(r1,r2,nrow=2,rel_heights = c(1,0.2))
 
-ggsave(here('model output','dts paper','fig_overlaps_all.png'),overlaps_all_fig4,h=8,w=8)
+# add fish silhouettes
+fig4<-ggdraw()+
+  draw_plot(overlaps_all_fig4)+
+  draw_image(here('data','icons','sablefish.png'),hjust=.36,vjust=-.17,scale=0.1)+
+  draw_image(here('data','icons','dover1.png'),hjust=.25,vjust=-.17,scale=0.1)+
+  draw_image(here('data','icons','sablefish.png'),hjust=0.05,vjust=-.17,scale=0.1)+
+  draw_image(here('data','icons','shortspine.png'),hjust=-0.08,vjust=-.17,scale=0.1)+
+  draw_image(here('data','icons','sablefish.png'),hjust=-.27,vjust=-.17,scale=0.1)+
+  draw_image(here('data','icons','longspinet.png'),hjust=-.41,vjust=-.17,scale=0.1)+
+  #row2
+  draw_image(here('data','icons','dover1.png'),hjust=.36,vjust=.23,scale=0.1)+
+  draw_image(here('data','icons','shortspine.png'),hjust=.25,vjust=.23,scale=0.1)+
+  draw_image(here('data','icons','dover1.png'),hjust=0.06,vjust=.23,scale=0.1)+
+  draw_image(here('data','icons','longspinet.png'),hjust=-0.08,vjust=.23,scale=0.1)+
+  draw_image(here('data','icons','shortspine.png'),hjust=-.27,vjust=.23,scale=0.1)+
+  draw_image(here('data','icons','longspinet.png'),hjust=-.41,vjust=.23,scale=0.1)
+fig4
+
+ggsave(here('model output','dts paper','fig_overlaps_all.png'),fig4,h=8,w=8)
 ```
 
 ## Figure 5
 
-```{r,fig.height=8,fig.width=8}
+Timeseries with color shading (Hovmoller type plot)
+
+```{r,eval=F,fig.height=8,fig.width=8}
 dover_sable_lic_D <- LIC_D_prop_change(dover_ens_separate,sable_ens_separate)
 dover_ss_lic_D <- LIC_D_prop_change(dover_ens_separate,ss_ens_separate)
 dover_ls_lic_D <- LIC_D_prop_change(dover_ens_separate,ls_ens_separate)
@@ -802,9 +821,51 @@ D_fps_plot <- LIC_D_fps_all %>%
         panel.border = element_rect(color='black',fill=NA,size=1.5))
 
 D_fps_plot
-
-ggsave(here('model output','dts paper','fig_overlaps_footprints.png'),D_fps_plot,w=8,h=8)
+# ggsave(here('model output','dts paper','fig_overlaps_footprints.png'),D_fps_plot,w=8,h=8)
 ```
+
+Hurricane point range plot showing 2075-2100 mean change
+
+```{r,fig.height=6,fig.width=8}
+dover_sable_lic_D <- LIC_D_mean_change(dover_ens_separate,sable_ens_separate)
+dover_ss_lic_D <- LIC_D_mean_change(dover_ens_separate,ss_ens_separate)
+dover_ls_lic_D <- LIC_D_mean_change(dover_ens_separate,ls_ens_separate)
+sable_ss_lic_D <- LIC_D_mean_change(sable_ens_separate,ss_ens_separate)
+sable_ls_lic_D <- LIC_D_mean_change(sable_ens_separate,ls_ens_separate)
+ss_ls_lic_D <- LIC_D_mean_change(ss_ens_separate,ls_ens_separate)
+
+# together
+LIC_D_fps_all <- dover_sable_lic_D %>% mutate(spp="Sablefish/Dover Sole") %>% 
+  bind_rows(dover_ss_lic_D %>% mutate(spp="Dover Sole/Shortspine")) %>%  
+  bind_rows(dover_ls_lic_D %>% mutate(spp="Dover Sole/Longspine")) %>%  
+  bind_rows(sable_ss_lic_D %>% mutate(spp="Sablefish/Shortspine")) %>%  
+  bind_rows(sable_ls_lic_D %>% mutate(spp="Sablefish/Longspine")) %>%  
+  bind_rows(ss_ls_lic_D %>% mutate(spp="Shortspine/Longspine")) %>% 
+  mutate(spp=factor(spp,levels=c("Sablefish/Dover Sole","Sablefish/Shortspine","Sablefish/Longspine",
+                                 "Dover Sole/Shortspine","Dover Sole/Longspine","Shortspine/Longspine")))
+
+# plot
+D_fps_plot <- LIC_D_fps_all %>% 
+  mutate(ESM=toupper(esm)) %>% 
+  mutate(upper=D_mean+D_sd,lower=D_mean-D_sd) %>% 
+  ggplot(aes(x=fct_rev(spp),y=D_mean,ymax=upper,ymin=lower,color=ESM))+
+  geom_pointrange(position = position_dodge(width=0.3))+
+  geom_hline(yintercept=0,linetype=2)+
+  coord_flip()+
+  scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  facet_wrap(~port_name)+
+  labs(x="Species Pair",y="Mean Change in Schoener's D",color="CCROMS Model")+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        # legend.position = 'right',
+        axis.text.x = element_text(angle=45,vjust=0.8,hjust=0.8),
+        # legend.key.width = unit(0.75,'inches'),
+        panel.spacing = unit(0.2,'inches'),
+        strip.text = element_text(size=8),
+        panel.border = element_rect(color='black',fill=NA,size=1.5))
+D_fps_plot
+ggsave(here('model output','dts paper','fig_overlaps_footprints.png'),D_fps_plot,w=8,h=6)
+```
+
 
 ## Figure 6
 

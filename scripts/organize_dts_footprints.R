@@ -1,6 +1,6 @@
 # Organize DTS footprints
 # Footprints provided by Becca Selden
-# 12/14/2021
+# Updated 08/15/2022
 
 library(tidyverse)
 library(sf)
@@ -10,12 +10,13 @@ library(ggsci)
 
 # import the footprints
 
-shp_fls <- list.files(here('data','DTS footprints'),full.names = T)
-shp_fls <- shp_fls[str_which(shp_fls,".shp")]
+shp_fls <- list.files(here('data','DTS footprints'),full.names = T) %>% str_subset(".shp")
 
 footprints <- purrr::map(shp_fls,read_sf) %>% 
   bind_rows() %>% 
-  mutate(port_group=c('BGA','CBA','CLO',"ERA","MRA","NPS"))
+  dplyr::select(-id) %>% 
+  mutate(port_group=c('Astoria','Brookings','Coos Bay',"Crescent City","Eureka","Fort Bragg","Los Angeles",
+                      "Monterey","Morro Bay","Newport","Puget Sound","San Diego","San Franscisco","Santa Barbara","WA Coast"))
 bb <- st_bbox(footprints)
 
 coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
@@ -28,7 +29,7 @@ ggplot()+
   xlim(bb[1],bb[3])+ylim(bb[2],bb[4])+
   coord_sf(datum=NA)+
   theme_void()+
-  scale_fill_npg(name="Port Group")
+  scale_fill_discrete(name="Port Group")
 
 # write as one file
 write_sf(footprints,here('data','DTS footprints','DTS_footprints_combined.shp'))

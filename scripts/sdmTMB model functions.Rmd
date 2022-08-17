@@ -1987,7 +1987,22 @@ LIC_D_prop_change <- function(df1,df2){
     mutate(Dplus=deltaD>0,Lplus=deltaL>0) %>% 
     group_by(port_name,year,esm) %>% 
     summarise(D_prop=sum(Dplus),
-              L_prop=sum(Lplus)) %>% 
+              L_prop=sum(Lplus),
+              D_meanchange=mean(deltaD),
+              L_meanchange=mean(deltaL)) %>% 
+    ungroup()
+  df_out
+}
+
+LIC_D_mean_change <- function(df1,df2){
+  df <- purrr::map_df(c('gfdl','hadl','ipsl'),lic_D_fps,sims_df1=df1,sims_df2=df2,fp=footprints)
+  df_out <- df %>% 
+    filter(year %in% 2075:2100) %>% 
+    group_by(port_name,esm) %>% 
+    summarise(D_mean=mean(deltaD),
+              L_mean=mean(deltaL),
+              D_sd=sd(deltaD),
+              L_sd=sd(deltaL)) %>% 
     ungroup()
   df_out
 }

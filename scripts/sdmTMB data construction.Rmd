@@ -424,30 +424,56 @@ hab <- hab %>%
 
 ## DTS Trawl Footprints
 
+```{r, eval=F}
+# DTS relative importance
+dts_imp <- read_csv(here('data','DTS footprints','dts_imp_1987-2019.csv'))
+dts_imp_plot <- dts_imp %>% 
+  ggplot(aes(fct_reorder(IOPAC,mean_frac_land,.desc = T),mean_frac_land))+
+  geom_col()+
+  labs(x='Port Group',y="Mean Landings Fraction")+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+dts_imp_plot
+
+dts_imp_plot2 <- dts_imp %>% 
+  ggplot(aes(fct_reorder(IOPAC,mean_frac_trips,.desc = T),mean_frac_trips))+
+  geom_col()+
+  labs(x='Port Group',y="Mean Trips Fraction")+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+dts_imp_plot2
+
+# dts rank order table
+dts_fp_ranks <- dts_imp %>% 
+  mutate(land_rank=dense_rank(desc(mean_frac_land)),
+         trips_rank=dense_rank(desc(mean_frac_trips))) %>% 
+  mutate(rankssum=land_rank+trips_rank)
+```
+For now (August 2022) choose all six ports whose mean share of DTS relative to all groundfish FMP landings is >60% (Brookings, Crescent City, Eureka, Fort Bragg, Morro Bay, Coos Bay)
+
 ```{r,eval=F}
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
   st_transform(st_crs(projection_extent)) %>% 
-  # fix names
-  mutate(port_name=case_when(
-    port_group=="BGA" ~ "Fort Bragg",
-    port_group=="CBA" ~ "Coos Bay",
-    port_group=="CLO" ~ "Astoria",
-    port_group=="ERA" ~ "Eureka",
-    port_group=="MRA" ~ "Morro Bay",
-    port_group=="NPS" ~ "North Puget Sound",
-  )) %>% 
-  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Astoria","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
+  filter(port_group %in% c("Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay", "Coos Bay")) %>% 
+  mutate(port_name=factor(port_group,levels=c("Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
 
-port_match <- tibble(port_name=c("Fort Bragg","Coos Bay","Astoria","Eureka","Morro Bay","North Puget Sound")) %>% 
-  mutate(port_code=c("BRG","COS","AST","ERK","MRO","ANA"))
+bb <- st_bbox(footprints)
+ggplot()+
+  geom_sf(data=coast,fill='grey70')+
+  geom_sf(data=footprints,aes(fill=port_name),alpha=0.6)+
+  xlim(bb[1],bb[3])+ylim(bb[2],bb[4])+
+  coord_sf(datum=NA)+
+  theme_void()+
+  scale_fill_discrete(name="Port Group")
+
+port_match <- tibble(port_name=c("Fort Bragg","Coos Bay","Astoria","Eureka","Morro Bay","North Puget Sound","Brookings","Crescent City")) %>%
+  mutate(port_code=c("BRG","COS","AST","ERK","MRO","ANA","BRK","CRS"))
 
 port_coords <- read_csv(here('data','port_coords.csv'),show_col_types = F) %>% 
   st_as_sf(coords=c("Lon","Lat"),crs=4326) %>% 
   st_transform(st_crs(projection_extent)) %>% 
   left_join(port_match) %>% 
   filter(port_name%in% unique(footprints$port_name)) %>% 
-  mutate(port_name=factor(port_name,levels=c("North Puget Sound","Astoria","Coos Bay","Eureka","Fort Bragg","Morro Bay")))
+  mutate(port_name=factor(port_name,levels=c("Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
 rm(port_match)
 
 roms_ports_match <- roms %>% 
@@ -457,7 +483,6 @@ roms_ports_match <- roms %>%
   st_set_geometry(NULL) %>% 
   drop_na() %>% 
   dplyr::select(latitude,longitude,port_group,port_name)
-  
 ```
 
 ## DTS Landings and Value

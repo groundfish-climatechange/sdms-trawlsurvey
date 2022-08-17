@@ -1,0 +1,99 @@
+---
+title: "DTS_Landings_IOPAC"
+author: "Becca Selden"
+date: '2022-08-12'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+```
+
+#### Bring over clean logbook dataframe
+Running download_clean_logbook_data.R results in `new_df`
+
+#### Species List
+```{r species list}
+# Species ID
+load("Data/FMP_Logbook_SPID_Nominal.RData")
+# No LSPN, only LSP1
+# No THD1, only THDS
+# No SSPN, only SSP1
+
+dts <- c("DOVR", "DVR1", "LSP1", "LSPN","THD1", "THDS", "SSP1", "SSPN", "SABL", "SBL1")
+
+```
+
+#### IOPAC ports
+```{r iopac ports}
+ports <- read.csv(here::here('Data', 'iopac_logbook_conversion_table.csv'))
+
+new_df2 <- new_df %>%
+  left_join(ports,
+            by = c("RPCID" = "PACFIN_PORT_CODE")) %>%
+  filter(
+    is.na(IOPAC)!=TRUE
+  ) %>%
+  filter(
+    IOPAC!= 'Unknown Ports'
+  )
+```
+
+#### Subset to just DTS species columns
+```{r subset dts}
+keep_ids <- c("RYEAR", "TRIP_ID", "RPCID", "IOPAC", "Best_Lat", "Best_Long", "Total_All_FMP.kg")
+
+#dts <- c("DOVR", "DVR1", "LSP1", "LSPN","THD1", "THDS", "SSP1", "SSPN", "SABL", "SBL1")
+keep_dts <- c("DOVR.kg", "LSP1.kg", "THDS.kg", "SSP1.kg", "SABL.kg", "SBL1.kg")
+
+keep_vec <- c(keep_ids, keep_dts)
+
+new_df2 <- new_df2 %>%
+  dplyr::select(all_of(keep_vec))
+
+# Can't figure out how to make it sum across a vector of column names like keep_dts
+new_df2 <- new_df2 %>%
+  mutate(total_dts=sum(DOVR.kg+ LSP1.kg+ THDS.kg + SSP1.kg + SABL.kg + SBL1.kg))
+
+```
+
+#### Aggregate all DTS in each year by IOPAC group
+```{r agg dts}
+agg_dts_trip <- new_df2 %>%
+  group_by(RYEAR, TRIP_ID, RPCID, IOPAC) %>%
+  summarize(total_fmp_kg=sum(Total_All_FMP.kg),
+            total_dts_kg=sum(total_dts)) %>%
+  mutate(dts_landed=ifelse(total_dts_kg >0, 1, 0))
+
+agg_dts_yr <- agg_dts_trip %>%
+  group_by(RYEAR, IOPAC) %>%
+  summarize(total_dts_kg=sum(total_dts_kg),
+            total_fmp_kg=sum(total_fmp_kg),
+            total_trips=length(unique(TRIP_ID)),
+            trips_dts=sum(dts_landed))
+```
+
+#### Fraction of pounds and trips landing DTS
+```{r frac dts}
+agg_dts_yr <- agg_dts_yr %>%
+  mutate(dts_frac_landing=total_dts_kg/total_fmp_kg,
+         dts_frac_trips=trips_dts/total_trips,
+         yr_dts=dts_frac_trips>0)
+```
+
+#### Average DTS importance over all years
+```{r avg dts importance}
+dts_imp <- agg_dts_yr %>%
+  group_by(IOPAC)%>%
+  summarize(mean_frac_land=mean(dts_frac_landing),
+            sd_frac_land=sd(dts_frac_landing),
+            mean_frac_trips=mean(dts_frac_trips),
+            sd_frac_trips=sd(dts_frac_trips),
+            years_dts=sum(yr_dts),
+            years_fmp=length(unique(RYEAR)))
+
+write.csv(dts_imp, here::here("Output/dts_imp_1987-2019.csv"), row.names=F)
+
+```
