@@ -11,9 +11,10 @@ plot_depth_distribution <- function(projection_df){
     mutate(cpue=exp(est)) %>% 
     rename(depth=depth_m) %>%
     mutate(depth=-depth) %>% 
-    group_by(depth) %>% 
+    group_by(esm,depth) %>% 
     summarise(cpue=mean(cpue,na.rm=T)) %>% 
     ungroup() %>% 
+    group_by(esm) %>% 
     mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
     arrange(desc(depth)) %>% 
     mutate(cum_cpue=cumsum(prop_cpue)) %>% 
@@ -25,9 +26,10 @@ plot_depth_distribution <- function(projection_df){
     mutate(cpue=exp(est)) %>% 
     rename(depth=depth_m) %>% 
     mutate(depth=-depth) %>% 
-    group_by(depth) %>% 
+    group_by(esm,depth) %>% 
     summarise(cpue=mean(cpue,na.rm=T)) %>% 
     ungroup() %>% 
+    group_by(esm) %>% 
     mutate(prop_cpue=cpue/sum(cpue,na.rm=T)) %>%
     arrange(desc(depth)) %>% 
     mutate(cum_cpue=cumsum(prop_cpue)) %>% 
@@ -42,6 +44,7 @@ plot_depth_distribution <- function(projection_df){
     # 700 fathom line
     geom_vline(xintercept=-1280.16,linetype=2)+
     coord_flip()+
+    facet_wrap(~esm)+
     scale_color_manual(values=c("#2271B2","#d55e00"))+
     labs(x="Depth (m)",y="Cumulative Proportion",title="",col="Period")
   
