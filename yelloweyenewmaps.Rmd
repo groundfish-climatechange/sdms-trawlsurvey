@@ -230,20 +230,20 @@ map_year <- function(spp_preds,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
 Wrapper to make a map for "baseline" (1985-2010), "mid century" (2040-2060), and "end century" (2080-2100)
 
 ```{r}
-make_six_maps <- function(spp_preds){
-  p1 <- map_year(spp_preds,yr_vec=c(1985:2010))+labs(title='baseline')
-  p2 <- map_year(spp_preds,yr_vec=c(2045:2050))+labs(title='mid century1')
-  p3 <- map_year(spp_preds,yr_vec=c(2055:2060))+labs(title='mid century2')
-  p4 <- map_year(spp_preds,yr_vec=c(2065:2070))+labs(title='mid century3')
-  p5 <- map_year(spp_preds,yr_vec=c(2080:2090))+labs(title='end of century1')
-    p6 <- map_year(spp_preds,yr_vec=c(2090:2100))+labs(title='end of century2')
+make_six_maps <- function(preds.yelloweye){
+  p1 <- map_year(preds.yelloweye,yr_vec=c(1985:2010))+labs(title='baseline')
+  p2 <- map_year(preds.yelloweye,yr_vec=c(2050:2060))+labs(title='mid century1')
+  p3 <- map_year(preds.yelloweye,yr_vec=c(2060:2070))+labs(title='mid century2')
+  p4 <- map_year(preds.yelloweye,yr_vec=c(2070:2080))+labs(title='mid century3')
+  p5 <- map_year(preds.yelloweye,yr_vec=c(2080:2090))+labs(title='end of century1')
+    p6 <- map_year(preds.yelloweye,yr_vec=c(2090:2100))+labs(title='end of century2')
   plot_grid(p1,p2,p3,p4,p5,p6,nrow=2)
 }
 ```
 
 ```{r,fig.height=5,fig.width=8}
-# mp <- make_predictions(m)
-# make_six_maps(mp)
+mp <- make_predictions(m)
+make_six_maps(mp)
 ```
 
 Difference map (departure from baseline)
@@ -448,9 +448,9 @@ process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_sub
 
 # Apply to Species
 
-Pacific Ocean Perch: substrate
+Yelloweye rockfish: substrate
 ```{r}
-process_species_model(species='pacific ocean perch',incl_depth = F,incl_substrate = T)
+process_species_model(species='yelloweye rockfish',incl_depth = F,incl_substrate = T)
 ```
 
 Greenstriped Rockfish: substrate
