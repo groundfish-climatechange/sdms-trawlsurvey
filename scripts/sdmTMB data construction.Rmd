@@ -431,8 +431,10 @@ dts_imp_plot <- dts_imp %>%
   ggplot(aes(fct_reorder(IOPAC,mean_frac_land,.desc = T),mean_frac_land))+
   geom_col()+
   labs(x='Port Group',y="Mean Landings Fraction")+
+  geom_hline(yintercept=0.6,color="red",linetype=2)+
   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
 dts_imp_plot
+# ggsave(here('model output','dts paper','dts_importance_port_group.png'),dts_imp_plot,w=6,h=5)
 
 dts_imp_plot2 <- dts_imp %>% 
   ggplot(aes(fct_reorder(IOPAC,mean_frac_trips,.desc = T),mean_frac_trips))+
