@@ -31,8 +31,6 @@ Atlantis_catch <- catch %>%
   group_by(Code,Index,Name,FG) %>% 
   summarise(totcatch=sum(totcatch)) %>% 
   ungroup()
-  
-  ## REMINDER TO FIX FLEET 27 (MEXICO GENERIC) LATER!
 
 # join and calculate F by fleet
 Finit <- Atlantis_catch %>% 

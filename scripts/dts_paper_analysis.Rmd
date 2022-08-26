@@ -355,6 +355,40 @@ landings_plot <- v %>%
         axis.text = element_text(size=10),
         axis.title = element_text(size=12),
         panel.border = element_rect(color='black',fill=NA))
+landings_plot
+ppp_plot <- v %>% 
+  group_by(Year,lab)%>% 
+  filter(Year>1979) %>% 
+  summarise(tot_dollars=sum(Dollars,na.rm=T),
+            tot_lbs=sum(Pounds,na.rm=T)) %>% 
+  mutate(ppp=tot_dollars/tot_lbs) %>% 
+  ggplot(aes(Year,ppp,color=lab))+geom_line(size=1.5)+
+  labs(x="Year",y="Price Per Pound ($)",color="")+
+  # scale_x_continuous(breaks=seq(2010,2020,by=2))+
+  scale_color_manual(values=pal)+
+  scale_x_continuous(expand=c(0,2))+
+  theme(legend.position = c(0.15,0.8),
+        axis.text = element_text(size=10),
+        axis.title = element_text(size=12),
+        panel.border = element_rect(color='black',fill=NA))
+ppp_plot
+
+lbs_plot <- v %>% 
+  group_by(Year,lab)%>% 
+  filter(Year>1979) %>% 
+  summarise(tot_dollars=sum(Dollars,na.rm=T),
+            tot_lbs=sum(Pounds,na.rm=T)) %>% 
+  mutate(ppp=tot_dollars/tot_lbs) %>% 
+  ggplot(aes(Year,tot_lbs/1000,color=lab))+geom_line(size=1.5)+
+  labs(x="Year",y="Thousand Pounds",color="")+
+  # scale_x_continuous(breaks=seq(2010,2020,by=2))+
+  scale_color_manual(values=pal)+
+  scale_x_continuous(expand=c(0,2))+
+  theme(legend.position = c(0.15,0.8),
+        axis.text = element_text(size=10),
+        axis.title = element_text(size=12),
+        panel.border = element_rect(color='black',fill=NA))
+lbs_plot
 ```
 
 Fishing footprints
@@ -383,7 +417,7 @@ Overlap map (count number of species in each cell). This figure shows the number
 
 ```{r,fig.width=6,fig.height=8}
 multimapdiff <- map_multispp_diff(four_spp,qlower=0.75,qupper=1)
-multimapdiff
+# multimapdiff
 ```
 
 Finish Figure 1
@@ -391,7 +425,7 @@ Finish Figure 1
 ```{r}
 row2 <- plot_grid(footprints_map,multimapdiff,labels=c('b','c'),nrow=1,rel_widths = c(0.8,1))
 multimapcomp <- plot_grid(landings_plot,row2,nrow=2,rel_heights = c(0.3,0.7),labels='auto')
-# multimapcomp
+multimapcomp
 
 ggsave(here('model output','dts paper','fig1.png'),multimapcomp,w=6,h=8)
 ```
@@ -420,12 +454,18 @@ fourspp_reldist_fut <- fourspp_reldist %>%
 # bind again
 fourspp_reldist_change <- fourspp_reldist_hist %>% 
   left_join(fourspp_reldist_fut,by=c('species','lat','esm','sim')) %>%
-  mutate(change=mean_dist_fut-mean_dist_hist)
-  # group_by(species,lat) %>% 
-  # summarise(meanchange=mean(change),
-  #           change5=quantile(change,0.05),
-  #           change95=quantile(change,0.95))
+  mutate(change=mean_dist_fut-mean_dist_hist) %>%
+  # add some plotting helpers
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls" ~ "Longspine",
+      species=="ss"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  mutate(ESM=toupper(esm))
 ```
+
 ```{r}
 footprint_dist_to_shore <- footprints %>% 
   st_join(roms_dist_to_coast %>% st_as_sf(coords=c('longitude','latitude'),crs="+proj=utm +zone=10 +datum=WGS84 +units=km")) %>%
@@ -434,42 +474,25 @@ footprint_dist_to_shore <- footprints %>%
   summarise(mean_km_to_coast=mean(km_to_coast))
 ```
 
+```{r}
+# latitudinal centroid of fishing footprints
+fp_lat <- footprints %>% st_centroid() %>% st_transform(4326) %>% 
+  st_coordinates() %>% as_tibble() %>% set_names(c("lon","lat")) %>% 
+  mutate(yint=0)
+```
+
+
 Make the plot
 
 ```{r}
-# four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
-#     mutate(spp_plotting=case_when(
-#       species=='dover' ~ "Dover Sole",
-#       species=="ls" ~ "Longspine",
-#       species=="ss"~"Shortspine",
-#       species=="sable" ~"Sablefish"
-#     )) %>% 
-#     mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
-#   ggplot(aes(x=lat,y=meanchange,ymin=change5,ymax=change95,fill=spp_plotting,col=spp_plotting))+
-#   geom_ribbon(alpha=0.2,linetype=3)+
-#   geom_line(size=1)+
-#   geom_hline(yintercept=0,linetype=2)+
-#   # ylim(-6,25)+
-#   scale_color_manual(values=pal4)+
-#   scale_fill_manual(values=pal4)+
-#   # scale_y_reverse(limits=c(90,20))+
-#   coord_flip()+
-#   # theme(legend.position = c(0.8,0.7))+
-#   labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species",fill="Species")+
-#   theme(panel.background = element_rect(fill=NA,color='black'))
-four_spp_dist_to_shore_change <- fourspp_reldist_change %>%
-    mutate(spp_plotting=case_when(
-      species=='dover' ~ "Dover Sole",
-      species=="ls" ~ "Longspine",
-      species=="ss"~"Shortspine",
-      species=="sable" ~"Sablefish"
-    )) %>% 
-    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
-  mutate(ESM=toupper(esm)) %>% 
-  ggplot(aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting))+
-  geom_point(alpha=0.2,size=0.7)+
+four_spp_dist_to_shore_change <- ggplot()+
+  geom_point(data=fourspp_reldist_change,
+             aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting),
+             alpha=0.2,size=0.7)+
   geom_hline(yintercept=0,linetype=2)+
-  geom_smooth()+
+  geom_smooth(data=fourspp_reldist_change,
+             aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting))+
+  # geom_point(data=fp_lat,aes(x=lat,y=-20),color='black',size=2)+
   scale_y_continuous(limits=c(-20,20))+
   facet_wrap(~ESM,nrow=1)+
   scale_color_manual(values=pal4)+
@@ -896,7 +919,7 @@ reldens_fig <- allspp_reldens %>%
   ggplot(aes(delta_perc,fill=ESM))+
   geom_density(alpha=0.5)+
   geom_vline(xintercept=0,linetype=2)+
-  facet_wrap(~fct,scales='free',ncol=6)+
+  facet_wrap(~fct,scales='free',ncol=7)+
   # xlim(-200,200)+
   scale_color_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
   scale_fill_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
@@ -930,5 +953,23 @@ reldens_fig <- allspp_reldens %>%
 
 reldens_fig
 ggsave(here('model output','dts paper','fig_cpue_change_footprints.png'),reldens_fig,w=8,h=8)
+```
+
+# Supplementary Figures
+
+## Cumulative Depth Distribution
+
+```{r}
+cume_depth_all <- purrr::map(list(dover_ens_all,sable_ens_all,ss_ens_all,ls_ens_all),plot_depth_distribution_sims) %>% plot_grid(plotlist=.,labels='auto',ncol=2)
+
+cume_depth_plt <- ggdraw()+
+  draw_plot(cume_depth_all)+
+  draw_image(here('data','icons','dover1.png'),hjust=.27,vjust=-.2,scale=0.15)+
+  draw_image(here('data','icons','sablefish.png'),hjust=-.26,vjust=-.2,scale=0.15)+
+  draw_image(here('data','icons','shortspine.png'),hjust=.24,vjust=.3,scale=0.15)+
+  draw_image(here('data','icons','longspinet.png'),hjust=-.26,vjust=.3,scale=0.15)
+# cume_depth_plt
+
+ggsave(here('model output','dts paper','four_spp_cume_depth_sims.png'),cume_depth_plt,w=8,h=6)
 ```
 

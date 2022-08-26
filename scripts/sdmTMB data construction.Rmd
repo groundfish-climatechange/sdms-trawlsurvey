@@ -313,6 +313,9 @@ projection_extent <- trawl_bbox %>%
 
 # save the outline
 write_rds(projection_extent,here::here('data','cropped_domain_for_projected_sdms.rds'))
+
+write_sf(projection_extent,here::here('data','cropped_domain_for_projected_sdms.shp'))
+# ggplot()+geom_sf(data=projection_extent,fill='lightblue')+geom_sf(data=coast)
 ```
 
 ```{r,eval=F}
@@ -393,6 +396,7 @@ trawl_roms_utm <- read_rds(here::here('data','trawl_roms_joined.rds'))
 ```{r}
 # pre-processed and clipped to projection extent
 roms <- read_rds(here('data','roms_for_sdm_projection.rds'))
+roms_area <- read_rds(here('data','roms_cell_area_km2.rds'))
 ```
 
 ```{r}
@@ -426,28 +430,68 @@ hab <- hab %>%
 
 ```{r, eval=F}
 # DTS relative importance
-dts_imp <- read_csv(here('data','DTS footprints','dts_imp_1987-2019.csv'))
+dts_imp <- read_csv(here('data','DTS footprints','dts_imp_yr_1987-2019.csv'))
+
 dts_imp_plot <- dts_imp %>% 
+  group_by(IOPAC) %>%
+  summarise(mean_frac_land=mean(dts_frac_landing)) %>%
   ggplot(aes(fct_reorder(IOPAC,mean_frac_land,.desc = T),mean_frac_land))+
   geom_col()+
-  labs(x='Port Group',y="Mean Landings Fraction")+
+  labs(x='Year',y="Mean Landings Fraction")+
   geom_hline(yintercept=0.6,color="red",linetype=2)+
   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+
 dts_imp_plot
-# ggsave(here('model output','dts paper','dts_importance_port_group.png'),dts_imp_plot,w=6,h=5)
 
-dts_imp_plot2 <- dts_imp %>% 
-  ggplot(aes(fct_reorder(IOPAC,mean_frac_trips,.desc = T),mean_frac_trips))+
+dts_mean_landings_plot <- dts_imp %>% 
+  group_by(IOPAC) %>%
+  summarise(mean_land=mean(total_dts_kg)) %>%
+  ggplot(aes(fct_reorder(IOPAC,mean_land,.desc = T),mean_land/1000))+
   geom_col()+
-  labs(x='Port Group',y="Mean Trips Fraction")+
+  labs(x='Year',y="Mean DTS Landings (MT)")+
   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
-dts_imp_plot2
 
-# dts rank order table
-dts_fp_ranks <- dts_imp %>% 
-  mutate(land_rank=dense_rank(desc(mean_frac_land)),
-         trips_rank=dense_rank(desc(mean_frac_trips))) %>% 
-  mutate(rankssum=land_rank+trips_rank)
+dts_mean_landings_plot
+
+dts_imp_fig <- plot_grid(dts_imp_plot,dts_mean_landings_plot,nrow=2,labels='auto')
+ggsave(here('model output','dts paper','dts_importance_port_group.png'),dts_imp_fig,w=6,h=8)
+
+# dts_imp_ts_plot <- dts_imp %>% 
+#   # group_by(IOPAC) %>% 
+#   # mutate(mean_frac_land=mean(dts_frac_landing)) %>% 
+#   ggplot(aes(RYEAR,dts_frac_landing))+
+#   geom_line()+
+#   facet_wrap(~IOPAC)+
+#   labs(x='Year',y="Landings Fraction")+
+#   geom_hline(yintercept=0.6,color="red",linetype=2)+
+#   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+# 
+# dts_imp_ts_plot
+# 
+# # years above 50% importance
+# dts_imp
+# # ggsave(here('model output','dts paper','dts_importance_port_group.png'),dts_imp_plot,w=6,h=5)
+# 
+# dts_total_landings_ts_plot <- dts_imp %>% 
+#   ggplot(aes(RYEAR,total_dts_kg/1000))+
+#   geom_line()+
+#   facet_wrap(~IOPAC)+
+#   labs(x='Year',y="Total DTS Landings (MT)")+
+#   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+# dts_total_landings_ts_plot
+# 
+# dts_imp_plot2 <- dts_imp %>% 
+#   ggplot(aes(fct_reorder(IOPAC,mean_frac_trips,.desc = T),mean_frac_trips))+
+#   geom_col()+
+#   labs(x='Port Group',y="Mean Trips Fraction")+
+#   theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1))
+# # dts_imp_plot2
+# 
+# # dts rank order table
+# dts_fp_ranks <- dts_imp %>% 
+#   mutate(land_rank=dense_rank(desc(mean_frac_land)),
+#          trips_rank=dense_rank(desc(mean_frac_trips))) %>% 
+#   mutate(rankssum=land_rank+trips_rank)
 ```
 For now (August 2022) choose all six ports whose mean share of DTS relative to all groundfish FMP landings is >60% (Brookings, Crescent City, Eureka, Fort Bragg, Morro Bay, Coos Bay)
 
@@ -455,8 +499,8 @@ For now (August 2022) choose all six ports whose mean share of DTS relative to a
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
   st_transform(st_crs(projection_extent)) %>% 
-  filter(port_group %in% c("Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay", "Coos Bay")) %>% 
-  mutate(port_name=factor(port_group,levels=c("Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
+  filter(port_group %in% c("Astoria","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay", "Coos Bay")) %>% 
+  mutate(port_name=factor(port_group,levels=c("Astoria","Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
 
 bb <- st_bbox(footprints)
 ggplot()+
@@ -475,7 +519,7 @@ port_coords <- read_csv(here('data','port_coords.csv'),show_col_types = F) %>%
   st_transform(st_crs(projection_extent)) %>% 
   left_join(port_match) %>% 
   filter(port_name%in% unique(footprints$port_name)) %>% 
-  mutate(port_name=factor(port_name,levels=c("Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
+  mutate(port_name=factor(port_name,levels=c("Astoria","Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
 rm(port_match)
 
 roms_ports_match <- roms %>% 
@@ -485,6 +529,12 @@ roms_ports_match <- roms %>%
   st_set_geometry(NULL) %>% 
   drop_na() %>% 
   dplyr::select(latitude,longitude,port_group,port_name)
+
+# footprint distance to coast
+fp_dtc <- roms_ports_match %>% 
+  left_join(roms_dist_to_coast) %>% 
+  group_by(port_name) %>% 
+  summarise(dtc=mean(km_to_coast))
 ```
 
 ## DTS Landings and Value

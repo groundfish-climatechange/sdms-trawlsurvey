@@ -10,7 +10,7 @@ library(ggsci)
 
 # import the footprints
 
-shp_fls <- list.files(here('data','DTS footprints'),full.names = T) %>% str_subset(".shp")
+shp_fls <- list.files(here('data','DTS footprints'),full.names = T) %>% str_subset(".shp") %>% str_subset("combined",negate = T)
 
 footprints <- purrr::map(shp_fls,read_sf) %>% 
   bind_rows() %>% 

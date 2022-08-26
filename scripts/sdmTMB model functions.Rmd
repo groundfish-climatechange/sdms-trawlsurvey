@@ -1726,6 +1726,8 @@ calc_rel_dist_to_shore <- function(sims_df){
 
 ## Depth Change
 
+Fraction less than 700 meters over time
+
 ```{r}
 calc_depth_frac <- function(sims_df,start_year=2020,end_year=2100){
   
@@ -1741,6 +1743,68 @@ calc_depth_frac <- function(sims_df,start_year=2020,end_year=2100){
   
 }
 ```
+
+Difference in cumulative depth distribution
+
+```{r}
+plot_depth_distribution_sims <- function(ens_preds,histyrs=1985:2010,futyrs=2075:2100){
+  yhist <- ens_preds %>% 
+    filter(year %in% histyrs) %>%
+    mutate(cpue=exp(median_est),cpue5=exp(est5),cpue95=exp(est95)) %>% 
+    rename(depth=depth_m) %>% 
+    group_by(depth) %>% 
+    summarise(cpue=mean(cpue,na.rm=T),
+              cpue5=mean(cpue5,na.rm=T),
+              cpue95=mean(cpue95,na.rm=T)) %>% 
+    ungroup() %>%
+    # group_by(year) %>%
+    mutate(prop_cpue=cpue/sum(cpue,na.rm=T),
+           prop_cpue5=cpue5/sum(cpue5,na.rm=T),
+           prop_cpue95=cpue95/sum(cpue95,na.rm=T)) %>%
+    arrange(desc(depth)) %>%
+    mutate(cum_cpue=cumsum(prop_cpue),
+           cum_cpue5=cumsum(prop_cpue5),
+           cum_cpue95=cumsum(prop_cpue95)) %>%
+    ungroup() %>%
+    mutate(period="1985-2010")
+  
+  yfut <- ens_preds %>% 
+    filter(year %in% futyrs) %>%
+    mutate(cpue=exp(median_est),cpue5=exp(est5),cpue95=exp(est95)) %>% 
+    rename(depth=depth_m) %>% 
+    group_by(depth) %>% 
+    summarise(cpue=mean(cpue,na.rm=T),
+              cpue5=mean(cpue5,na.rm=T),
+              cpue95=mean(cpue95,na.rm=T)) %>% 
+    ungroup() %>%
+    # group_by(year) %>% 
+    mutate(prop_cpue=cpue/sum(cpue,na.rm=T),
+           prop_cpue5=cpue5/sum(cpue5,na.rm=T),
+           prop_cpue95=cpue95/sum(cpue95,na.rm=T)) %>%
+    arrange(desc(depth)) %>%
+    mutate(cum_cpue=cumsum(prop_cpue),
+           cum_cpue5=cumsum(prop_cpue5),
+           cum_cpue95=cumsum(prop_cpue95)) %>%
+    ungroup() %>%
+    mutate(period="2075-2100")
+  
+  y <- bind_rows(yhist,yfut)
+  
+  y %>% 
+    ggplot(aes(depth,cum_cpue,ymax=cum_cpue95,ymin=cum_cpue5,col=period,fill=period))+
+    geom_ribbon(alpha=0.5)+
+    geom_line(size=1)+
+    xlim(-2000,0)+
+    # 700 fathom line
+    geom_vline(xintercept=-1280.16,linetype=2)+
+    coord_flip()+
+    guides(color='none',fill='none')+
+    scale_color_manual(values=c("#2271B2","#d55e00"))+
+    scale_fill_manual(values=c("#2271B2","#d55e00"))+
+    labs(x="Depth (m)",y="Cumulative Proportion",title="",col="Period",fill="Period")
+}
+```
+
 
 ## Overlap Metrics
 
