@@ -419,6 +419,10 @@ Overlap map (count number of species in each cell). This figure shows the number
 multimapdiff <- map_multispp_diff(four_spp,qlower=0.75,qupper=1)
 # multimapdiff
 ```
+```{r,fig.width=4,fig.height=6}
+footprints_map
+```
+
 
 Finish Figure 1
 
@@ -624,27 +628,33 @@ polys_and_footprints <- ggplot()+
 ```{r,fig.width=8,fig.height=8}
 # attach dumbbell plots
 footprint_db_temp_plot2 <- footprint_env_space %>% 
-  ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=port_name))+
+  ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=fct_rev(port_name)))+
   geom_dumbbell(color="#FCAE91",colour_x =NA,colour_xend = "#A50F15",
                 size=1,size_x=3,size_xend = 3) +
   labs(x="Temperature",y="")+
-  coord_flip()+
+  # coord_flip()+
   theme(panel.border = element_rect(color='black',fill=NA),
-        axis.text.x=element_text(color=pal_npg()(6),size=10))
+        axis.text.y=element_text(color=pal_npg()(7),size=10))
 
 footprint_db_oxy_plot2 <- footprint_env_space %>% 
-  ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=port_name))+
+  ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=fct_rev(port_name)))+
   geom_dumbbell(color="#a3c4dc",colour_x =NA,colour_xend = "#0e668b",
                 size=1,size_x=3,size_xend = 3) +
   labs(x="Oxygen",y="")+
-  coord_flip()+
-  theme(axis.text.x = element_blank(),panel.border = element_rect(color='black',fill=NA))
+  # coord_flip()+
+  theme(axis.text.y=element_text(color=pal_npg()(7),size=10),
+        panel.border = element_rect(color='black',fill=NA))
 
 fig3 <- plot_grid(footprint_db_temp_plot2,footprint_db_oxy_plot2,polys_and_footprints,labels='auto',nrow=3,
                   hjust = 0,vjust=1,
                   rel_heights = c(0.2,0.2,0.6))
 fig3
 ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,h=8,w=8)
+```
+
+```{r,fig.width=3,fig.height=6}
+footprint_db_oxy_plot2
+  footprint_db_temp_plot2
 ```
 
 ## Figure 4
@@ -889,6 +899,29 @@ D_fps_plot
 ggsave(here('model output','dts paper','fig_overlaps_footprints.png'),D_fps_plot,w=8,h=6)
 ```
 
+```{r,fig.height=6,fig.width=8}
+# LIC plot- does it look any different?
+LIC_fps_plot <- LIC_D_fps_all %>% 
+  mutate(ESM=toupper(esm)) %>% 
+  mutate(upper=L_mean+L_sd,lower=L_mean-L_sd) %>% 
+  ggplot(aes(x=fct_rev(spp),y=L_mean,ymax=upper,ymin=lower,color=ESM))+
+  geom_pointrange(position = position_dodge(width=0.3))+
+  geom_hline(yintercept=0,linetype=2)+
+  coord_flip()+
+  scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  facet_wrap(~port_name)+
+  labs(x="Species Pair",y="Mean Change in LIC",color="CCROMS Model")+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        # legend.position = 'right',
+        axis.text.x = element_text(angle=45,vjust=0.8,hjust=0.8),
+        # legend.key.width = unit(0.75,'inches'),
+        panel.spacing = unit(0.2,'inches'),
+        strip.text = element_text(size=8),
+        panel.border = element_rect(color='black',fill=NA,size=1.5))
+LIC_fps_plot
+```
+
+
 
 ## Figure 6
 
@@ -953,6 +986,31 @@ reldens_fig <- allspp_reldens %>%
 
 reldens_fig
 ggsave(here('model output','dts paper','fig_cpue_change_footprints.png'),reldens_fig,w=8,h=8)
+```
+
+```{r,fig.height=6,fig.width=3.5}
+sable_reldens_fig <- allspp_reldens %>% 
+  filter(spp_plotting=="Sablefish",ESM=="IPSL") %>% 
+  dplyr::select(sim,ESM,spp_plotting,delta_perc,port_name) %>%
+  # mutate(spp_plotting=paste0('~',spp_plotting,'~')) %>%
+  # unite(fct,spp_plotting,port_name,sep="\n",remove=F) %>%
+  # mutate(fct=factor(fct,levels=unique(fct))) %>%
+  ggplot(aes(delta_perc,fill=ESM))+
+  geom_density(alpha=0.5)+
+  geom_vline(xintercept=0,linetype=2)+
+  facet_wrap(~port_name,ncol=1)+
+  # xlim(-200,200)+
+  scale_color_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
+  scale_fill_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))+
+  labs(x="Percent Change in CPUE",y="",fill="",title="Change in CPUE across 100 simulations",color="")+
+  guides(fill='none',color='none')+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(size=12,angle=45,vjust=0.8,hjust=0.8),
+        axis.ticks.x = element_line(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor=element_blank())
+sable_reldens_fig
 ```
 
 # Supplementary Figures

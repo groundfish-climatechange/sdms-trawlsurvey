@@ -357,9 +357,6 @@ roms <- roms %>%
          longitude = sf::st_coordinates(.)[,1]) %>%
   # convert back to normal df
   st_set_geometry(NULL)
-
-# add depth
-
 ```
 
 ```{r,eval=F}

@@ -464,10 +464,9 @@ make_predictions <- function(modelobj,gcm="hadl"){
   
   # create a new tibble with the projected data for the chosen gcm
   newdata <- roms %>% 
-    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
     left_join(hab,by=c("lat","lon")) %>% 
     drop_na() %>% 
-    mutate(depth_m= -depth_m) %>%  # THIS IS VERY IMPORTANT FOR MODELS THAT INCLUDE DEPTH
+    mutate(depth_m= -depth_m) %>% 
     dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
   
   temperature <- newdata %>% dplyr::select(contains('bt')) %>% 

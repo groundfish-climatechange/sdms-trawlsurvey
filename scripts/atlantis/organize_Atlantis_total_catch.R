@@ -147,8 +147,76 @@ other_gears_port_year <- total_catch_summarized %>%
   mutate(fishery_type="generic") %>% 
   ungroup()
 
+catch2013 <- bind_rows(bottom_trawl_port_year,tribal_trawl_year,tribal_nontrawl_year,other_gears_port_year) %>% 
+  filter(year==2013) %>% 
+  #final removal of unused species
+  filter(Keep_Atlantis=="Y") %>% 
+  group_by(iopac,year,FG,fishery_type) %>% 
+  summarise(totcatch=sum(totcatch,na.rm=T)) %>% 
+  ungroup()
 
-### PLOTS AND CHECKS ###
+## UPDATE 08.05.2022## add CPS, Canadian, and Mexican catches
+# catch data cps
+dat_cps <- read_csv(here('data','atlantis','PacFIN_year_atlantis_cps.csv'))
+pacfin_spp_FG<- tibble(PACFIN_SPECIES_CODE=c("NANC","OMCK","PSDN","MSQD"),
+                       FG=c("ANC","FPL","SAR","MSQ"))
+# add cps to overall catch dataset
+dat_cps <- dat_cps %>% 
+  left_join(pacfin_spp_FG,by="PACFIN_SPECIES_CODE") %>% 
+  mutate(fishery_type="CPS") %>% 
+  rename(iopac=PORT_AREA_CODE,year=LANDING_YEAR,totcatch=LANDINGS) %>% 
+  filter(year==2013) %>% 
+  dplyr::select(iopac,year,FG,fishery_type,totcatch)
+
+catch2013 <- catch2013 %>% bind_rows(dat_cps)
+
+# catch data Canada/Mexico
+# need to split by CPS and non-CPS
+dat_cnmx <- read_csv(here('data','atlantis','catch_all_canada_mexico.csv')) %>% 
+  set_names(c("source","grp","FG","totcatch"))
+cnmx_cps <- dat_cnmx %>% 
+  filter(source %in% c("Canada","Mexico"),
+         FG %in% c("SAR","ANC","MSQ","FPS","FPL"),
+         totcatch>0) %>% 
+  dplyr::select(source,FG,totcatch) %>% 
+  complete(source,FG,fill=list(totcatch=0)) %>%
+  rename(iopac=source) %>% 
+  distinct() %>% 
+  mutate(fishery_type="CPS")
+
+cnmx_generic <- dat_cnmx %>% 
+  filter(source %in% c("Canada","Mexico"),
+         !(FG %in% c("SAR","ANC","MSQ","FPS","FPL")),
+         totcatch>0) %>% 
+  dplyr::select(source,FG,totcatch) %>% 
+  complete(source,FG,fill=list(totcatch=0)) %>%
+  rename(iopac=source) %>% 
+  distinct() %>% 
+  mutate(fishery_type="generic")
+
+catch2013=catch2013 %>% 
+  bind_rows(cnmx_cps) %>% 
+  bind_rows(cnmx_generic)
+
+## UPDATE 09.06.2022 ADDING MISSING HAKE AND SALMON CATCHES
+# For salmon, we are adding catch to the Generic fleet to make up for the lack of observers on salmon boats
+# We are adopting the catch from the older Atlantis model
+# We just add the old FVB catches to the Generic fleet
+# Canada catches are already in there
+old_salmon <- tibble(iopac="generic",year=2013,FG="FVB",fishery_type="generic",totcatch=6276.3)
+catch2013 <- catch2013 %>% 
+  bind_rows(old_salmon)
+# For hake- add "Mothership", "Catcher-processor", and "Research" values to Generic fleet ("Shore-based" fleet already accounted for)
+# As above, Canadian catches are already in there
+old_hake <- tibble(iopac="generic",year=2013,FG="FMM",fishery_type="generic",totcatch=52470+77950+1018)
+catch2013 <- catch2013 %>% 
+  bind_rows(old_hake)
+
+#### WRITE ####
+
+write_csv(catch2013,here::here('data','atlantis','catch_by_fleet_2013.csv'))
+
+#### PLOTS AND CHECKS ####
 # bottom trawl with or without "other" species
 trawl_yes_no <- bottom_trawl_port_year %>% 
   filter(year==2013) %>% 
@@ -255,60 +323,3 @@ x4<-other_gears_port_year %>%
   summarise(totcatch=sum(totcatch)) %>% 
   filter(FG %in% c('FDB','FDD','FDE','FDF','FDO','FPS','FVT','SHB','SHR','SSK')) %>% 
   arrange(FG,Keep_Atlantis,desc(totcatch))
-
-# palfleets <- viridis::viridis_pal(option="D")(3) %>% set_names(c('bottom trawl','tribal','generic'))
-
-catch2013 <- bind_rows(bottom_trawl_port_year,tribal_trawl_year,tribal_nontrawl_year,other_gears_port_year) %>% 
-  filter(year==2013) %>% 
-  #final removal of unused species
-  filter(Keep_Atlantis=="Y") %>% 
-  group_by(iopac,year,FG,fishery_type) %>% 
-  summarise(totcatch=sum(totcatch,na.rm=T)) %>% 
-  ungroup()
-
-## UPDATE 08.05.2022## add CPS, Canadian, and Mexican catches
-# catch data cps
-dat_cps <- read_csv(here('data','atlantis','PacFIN_year_atlantis_cps.csv'))
-pacfin_spp_FG<- tibble(PACFIN_SPECIES_CODE=c("NANC","OMCK","PSDN","MSQD"),
-                       FG=c("ANC","FPL","SAR","MSQ"))
-# add cps to overall catch dataset
-dat_cps <- dat_cps %>% 
-  left_join(pacfin_spp_FG,by="PACFIN_SPECIES_CODE") %>% 
-  mutate(fishery_type="CPS") %>% 
-  rename(iopac=PORT_AREA_CODE,year=LANDING_YEAR,totcatch=LANDINGS) %>% 
-  filter(year==2013) %>% 
-  dplyr::select(iopac,year,FG,fishery_type,totcatch)
-
-catch2013 <- catch2013 %>% bind_rows(dat_cps)
-
-# catch data Canada/Mexico
-# need to split by CPS and non-CPS
-dat_cnmx <- read_csv(here('data','atlantis','catch_all_canada_mexico.csv')) %>% 
-  set_names(c("source","grp","FG","totcatch"))
-cnmx_cps <- dat_cnmx %>% 
-  filter(source %in% c("Canada","Mexico"),
-         FG %in% c("SAR","ANC","MSQ","FPS","FPL"),
-         totcatch>0) %>% 
-  dplyr::select(source,FG,totcatch) %>% 
-  complete(source,FG,fill=list(totcatch=0)) %>%
-  rename(iopac=source) %>% 
-  distinct() %>% 
-  mutate(fishery_type="CPS")
-
-cnmx_generic <- dat_cnmx %>% 
-  filter(source %in% c("Canada","Mexico"),
-         !(FG %in% c("SAR","ANC","MSQ","FPS","FPL")),
-         totcatch>0) %>% 
-  dplyr::select(source,FG,totcatch) %>% 
-  complete(source,FG,fill=list(totcatch=0)) %>%
-  rename(iopac=source) %>% 
-  distinct() %>% 
-  mutate(fishery_type="generic")
-
-catch2013=catch2013 %>% 
-  bind_rows(cnmx_cps) %>% 
-  bind_rows(cnmx_generic)
-
-### WRITE ###
-
-write_csv(catch2013,here::here('data','atlantis','catch_by_fleet_2013.csv'))

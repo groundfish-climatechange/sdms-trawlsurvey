@@ -1,0 +1,472 @@
+---
+title: "SDMs for CPO Sanctuaries"
+author: "Owen Liu"
+date: '2022-09-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(cowplot) # for organizing multipanel plots
+library(visreg) # for visualizing conditional environmental relationships
+library(tictoc) # for timing
+```
+
+# Introduction
+
+Running SDMs using `sdmTMB` for California Current elasmobranchs and flatfish, following Janelle Layton's cross-validation [model selection](https://docs.google.com/spreadsheets/d/1gTmQwU91oO_JewZJpgWHUXUdn9pyqxpm/edit#gid=510573475)
+
+First, we load survey and environmental data used for fitting and projection.
+
+# Load Data
+```{r}
+rmarkdown::render(here::here('scripts','sdmTMB data construction.Rmd'),quiet=TRUE)
+```
+
+Next, we outline the functions we will use to fit, project, and visualize model outputs.
+
+# Required Functions
+
+## Prepare Species Data
+
+```{r}
+prepare_species <- function(dat,spp){
+  dat_sub <- dat %>% 
+    filter(species==spp) %>% 
+    
+    # rescale depth, oxygen, and temp to be N(0,1)
+    mutate(across(c(depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30),~(scale(.) %>% as.vector()),.names="{.col}_norm")) %>% 
+    
+    # add a year indicator
+    mutate(year=lubridate::year(date))
+}
+```
+
+## Run SDM
+
+This is a wrapper around `sdmTMB::sdmTMB()` that includes data construction, and allows for options on whether to include various covariates (depth, substrate) and how to model them in the mixed effects framework (e.g., GAM splines vs. quadratics)
+
+```{r}
+run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_substrate=T,hab_spline=T,env_spline=T,spline_k=3){
+  # filter data for species
+  modeldat <- prepare_species(dat,spp=spp)
+  
+  # make spde
+  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
+                   cutoff = 20)
+  
+  # model formula
+  formula <- paste0("cpue_kg_km2 ~ ")
+  
+  # substrate relationship
+  substrate <- paste("prop_hard_mixed + I(prop_hard_mixed^2)")
+  #wiggly habitat relationship?
+  substrate <- ifelse(hab_spline, paste0("s(prop_hard_mixed,k=",spline_k,")"),
+                      substrate)
+  if(!include_substrate) substrate=""
+  
+  # make the environmental effects
+  enviro <- paste("mean_temp_roms_30_norm + 
+                  I(mean_temp_roms_30_norm^2) + 
+                  mean_oxygen_roms_30_norm + 
+                  I(mean_oxygen_roms_30_norm^2)")
+  # wiggly environmental relationships?
+  enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
+                                      "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
+                   enviro)
+  # if depth effect, add to model formula
+  if(use_depth) {
+    formula = paste0(formula, " + depth_trawl_norm + I(depth_trawl_norm^2)")
+  }
+  
+  time_formula = "~ -1"
+  if(time_vary) {
+    time_formula = paste0(time_formula, " + ", substrate, " + ", enviro)
+    time_varying = as.formula(time_formula)
+    time = "year"
+  } else {
+    formula = paste0(formula, " + ", substrate, " + ", enviro)
+    time_varying = NULL
+    time = "year"
+  }
+  print('running model.')
+  m <- try( sdmTMB(
+    formula = as.formula(formula),
+    time_varying = time_varying,
+    mesh = spde,
+    time = time,
+    family = tweedie(link = "log"),
+    data = modeldat,
+    anisotropy = FALSE,
+    spatial = spatial_field,
+    #extra_time argument necessary for prediction
+    extra_time=1980:2100),
+  silent=F)
+
+  if(class(m)=="try-error"){
+    print(paste("Error."))
+  }else{
+    print(paste("Model for",spp,"complete."))
+  }
+
+  return(m)
+
+}
+```
+
+```{r}
+# m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
+```
+
+## Diagnostic Plots
+
+QQ plot, spatiotemporal predictions, spatiotemporal residuals
+
+```{r}
+make_diagnostic_plots <- function(m){
+  spp=unique(m$data$species)
+  sppdat <- prepare_species(trawl_roms_utm,spp)
+  resids <- residuals(m)[1:nrow(sppdat),1] %>% as_tibble()
+  sppdat$resid=resids$value
+  
+  # qq plot
+  qq <- ggplot(resids,aes(sample=value))+stat_qq()+stat_qq_line()+
+    labs(x="Theoretical",y="Sample")
+
+  # spatial and spatiotemporal predictions
+  preds <- predict(m) %>% filter(year %in% unique(sppdat$year)) %>% pull('est')
+  sppdat$pred <- preds
+  preds_time_space <- pred_space(sppdat,X='longitude',Y='latitude',time='year') + coord_equal()
+  preds_space <- pred_space(sppdat,X='longitude',Y='latitude',time='year',by_time = F)
+  
+  # spatiotemporal residuals
+  resids_space <- resid_space(sppdat,X='longitude',Y='latitude',time='year') + coord_equal()
+
+  # make and return the plot
+  diagplots <- plot_grid(preds_time_space,resids_space,preds_space,qq,nrow=2,rel_heights = c(1,0.6))
+  
+  diagplots
+}
+```
+
+```{r,fig.height=8,fig.width=8}
+# make_diagnostic_plots(m)
+```
+
+## Make Projections
+
+Choose a gcm (Hadley=`hadl`, GFDL=`gfdl`,IPSL=`ipsl`)
+
+```{r}
+make_predictions <- function(modelobj,gcm="hadl"){
+
+  original_model_data <- modelobj$data
+  # need to use the original (hindcast) environmental data to scale the projected data
+  mean_t <- mean(original_model_data$mean_temp_roms_30,na.rm=T)
+  sd_t <- sd(original_model_data$mean_temp_roms_30,na.rm=T)
+  mean_oxy <- mean(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  sd_oxy <- sd(original_model_data$mean_oxygen_roms_30,na.rm=T)
+  mean_depth <- mean(original_model_data$depth_trawl,na.rm=T)
+  sd_depth <- sd(original_model_data$depth_trawl,na.rm=T)
+  
+  # create a new tibble with the projected data for the chosen gcm
+  newdata <- roms %>% 
+    ## NOTE: WE LOSE A TON OF DATA HERE, SOMETHING MAY BE WRONG WITH THE HABITAT DATA
+    left_join(hab,by=c("lat","lon")) %>% 
+    drop_na() %>% 
+    mutate(depth_m= -depth_m) %>%
+    dplyr::select(year,lat,lon,latitude,longitude,prop_hard_mixed,depth_m,contains(paste0("30d_",gcm)))
+  
+  temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
+    set_names('temperature') %>% 
+    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+  
+  oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
+    set_names('oxygen') %>% 
+    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+  
+  depth_new <- newdata %>% dplyr::select(contains('depth')) %>% 
+    set_names('depth') %>% 
+    mutate(depth_trawl_norm=(depth-mean_depth)/sd_depth)
+
+  newdata <- newdata %>% 
+    bind_cols(temperature) %>% 
+    bind_cols(oxygen) %>% 
+    bind_cols(depth_new) %>% 
+    dplyr::select(-temperature,-oxygen, -depth) %>%
+    mutate(year=as.double(year))
+  
+  # years to predict
+  yrs <- sort(unique(newdata$year))
+  # now we can make the predictions
+  predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=F,extra_time=yrs)
+  
+  predicted_cpue_km2
+}
+```
+
+## Make Projection Maps
+
+```{r}
+# pretty grid for raster maps
+gr <- projection_extent %>% st_make_grid(cellsize=10,what='centers') %>% st_as_sf() %>% 
+  st_intersection(projection_extent)
+gr_xy <- st_coordinates(gr)
+```
+
+Map a specific year from the projection
+
+```{r}
+map_year <- function(spp_preds,yr_vec=c(2000),return_pred_df=F,plot_leg=T){
+  # scale for the legend, common within species
+  scl <- c(0,quantile(exp(spp_preds$est),0.99))
+  df <- spp_preds %>% 
+    filter(year%in%yr_vec) %>% 
+    group_by(longitude,latitude) %>% 
+    summarise(est=mean(est,na.rm=T) %>% exp()) %>% 
+    # rescale super large positive outliers for mapping purposes
+    mutate(est=ifelse(est>scl[2],scl[2],est))
+  # match nearest neighbors from predictions to grid
+  pred_points <- df %>% dplyr::select(longitude,latitude) %>% as.matrix()
+  nns <- nn2(pred_points,gr_xy,k=1)$nn.idx
+  gr_pred <- gr_xy %>% as_tibble() %>% mutate(est=df$est[nns])
+  
+  bbox=st_bbox(projection_extent)
+  
+  if(return_pred_df) {out <- gr_pred %>% as_tibble()}
+  
+  else{
+    out<-ggplot(coast)+
+      geom_sf()+
+      # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+      # scale_color_viridis_c()+
+      geom_raster(data=gr_pred,aes(x=X,y=Y,fill=est),interpolate=F)+
+      scale_fill_viridis_c(limits=scl)+
+      coord_sf(datum=NA)+
+      xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+      labs(x="",y="",fill="CPUE",title='')
+    if(!plot_leg) out <- out + theme(legend.position = 'None')
+  }
+  out
+}
+```
+
+Wrapper to make a map for "baseline" (1985-2010), "mid century" (2040-2060), and "end century" (2080-2100)
+
+```{r}
+make_three_maps <- function(spp_preds){
+  p1 <- map_year(spp_preds,yr_vec=c(1985:2010))+labs(title='baseline')
+  p2 <- map_year(spp_preds,yr_vec=c(2040:2060))+labs(title='mid century')
+  p3 <- map_year(spp_preds,yr_vec=c(2080:2100))+labs(title='end of century')
+  plot_grid(p1,p2,p3,nrow=1)
+}
+```
+
+```{r,fig.height=5,fig.width=8}
+# mp <- make_predictions(m)
+# make_three_maps(mp)
+```
+
+Difference map (departure from baseline)
+
+```{r}
+make_comparison_map <- function(spp_preds,yr=2050){
+  basepred <- map_year(spp_preds,yr_vec=1985:2010,return_pred_df = T)
+  newpred <- map_year(spp_preds,yr_vec=yr,return_pred_df = T) %>% 
+    mutate(est_comp=est) %>% dplyr::select(-est)
+  both <- basepred %>% 
+    left_join(newpred,by=c('X','Y')) %>% 
+    mutate(diffpred=est_comp-est)
+  
+  bbox=st_bbox(projection_extent)
+  
+  out<-ggplot(coast)+
+    geom_sf()+
+    # geom_point(data=df,aes(longitude,latitude,col=exp(est)))+
+    # scale_color_viridis_c()+
+    geom_raster(data=both,aes(x=X,y=Y,fill=diffpred),interpolate=F)+
+    scale_fill_gradient2(low = "red", mid = "white", high = "purple")+
+    coord_sf(datum=NA)+
+    # scale_fill_viridis_c(direction = -1)+
+    xlim(bbox[1],bbox[3])+ylim(bbox[2],bbox[4])+
+    labs(x="",y="",fill="Difference")
+  out
+}
+```
+
+Wrapper to make two difference maps (mid century minus baseline and end of century minus baseline)
+
+```{r}
+make_two_diff_maps <- function(spp_preds){
+  p1 <- make_comparison_map(spp_preds,yr=c(2040:2060))+labs(title='mid century')
+  p2 <- make_comparison_map(spp_preds,yr=c(2040:2060))+labs(title='end of century')
+  plot_grid(p1,p2,nrow=1)
+}
+```
+
+```{r,fig.height=5,fig.width=5.3}
+# make_two_diff_maps(mp)
+```
+
+## Environmental Relationships
+
+We can take advantage of the `visreg` package to look at the environmental response. We want to pull the data from it to back-transform the predictors into their original scale.
+
+```{r}
+plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
+  
+  # use visreg to do the fit for us
+  x <- visreg(fit=fit,xvar=predvar,scale='response',plot=FALSE)
+  datfit <- x$fit
+  
+  # if the response is not substrate, have to back-transform the predictor variable
+  if(predvar=="prop_hard_mixed"){
+    out = datfit %>% 
+      ggplot(aes(prop_hard_mixed,visregFit,ymax=visregUpr,ymin=visregLwr))+
+      geom_ribbon(fill='gray70')+
+      geom_line()+
+      labs(x=predvar,y="CPUE")+
+      theme(panel.border = element_rect(color='black',fill=NA))
+    
+  } else {
+      # find the mean and SD of the original predictor to back-transform
+      original_predvar = str_sub(predvar,end=-6L)
+      
+      predvar_dat=fit$data %>% dplyr::select(all_of(original_predvar)) %>% pluck(1)
+      mean_predvar <- mean(predvar_dat,na.rm=T)
+      sd_predvar <- sd(predvar_dat,na.rm=T)
+      predvar_trans <- (datfit %>% pluck(predvar))*sd_predvar+mean_predvar
+      
+      # add the transformation to the fitted relationship
+      datfit <- datfit %>% 
+        mutate(envtrans=predvar_trans)
+      
+      # output plot
+      out = datfit %>% 
+        ggplot(aes(envtrans,visregFit,ymax=visregUpr,ymin=visregLwr))+
+        geom_ribbon(fill='gray70')+
+        geom_line()+
+        labs(x=original_predvar,y="CPUE")+
+        theme(panel.border = element_rect(color='black',fill=NA))
+  }
+  
+  out
+
+}
+
+```
+
+```{r}
+# plot_single_env_relationship(fit = m)
+```
+
+Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as conditional responses of CPUE to the given variable, conditional on the other variables being held at their median values.
+
+```{r}
+plot_all_env_relationships <- function(m){
+  
+  form <-m$formula %>% pluck(1) %>% as.character() %>% pluck(3)
+  
+  if(grepl('depth_trawl_norm',form)){
+    depth_relationship <- plot_single_env_relationship(m,predvar="depth_trawl_norm")+
+      labs(x="Depth (m)")
+  } else depth_relationship=NULL
+  
+  if(grepl('prop_hard_mixed',form)){
+    hab_relationship <- plot_single_env_relationship(m,predvar="prop_hard_mixed")+
+      labs(x="Proportion Hard Substrate")
+  } else hab_relationship=NULL
+    
+  if(grepl('temp_roms',form)){
+    temp_relationship <- plot_single_env_relationship(m,predvar="mean_temp_roms_30_norm")+
+      labs(x="Bottom Temperature")
+  } else temp_relationship=NULL
+  
+  if(grepl('mean_oxygen_roms_30_norm',form)){
+    oxy_relationship <- plot_single_env_relationship(m,predvar="mean_oxygen_roms_30_norm")+
+      labs(x="Bottom Oxygen")
+  } else oxy_relationship=NULL
+  
+  cowplot::plot_grid(temp_relationship,oxy_relationship,depth_relationship,hab_relationship,nrow=2)
+}
+```
+
+
+```{r,fig.height=8,fig.width=8}
+# plot_all_env_relationships(m)
+```
+
+## Wrap Everything
+
+Wrap all of the above to make a "push go" function for a species to:
+
+*   Run a model with specified params
+*   Save all diagnostic plots
+*   Save all environmental affinity plots
+*   Make projections under 3 ESMs (Hadley, IPSL, GFDL)
+*   Make maps and difference maps
+*   Save projected data
+
+```{r}
+process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_substrate,dir.out=here::here('Janelle','models_owen')){
+  tic(paste(species,"processing total time"))
+  tic(paste("Fitting model for",species))
+  # run model
+  m <- run_sdmTMB(dat = trawl_roms_utm,spp=species,use_depth=incl_depth,time_vary = F,spatial_field = F,include_substrate = incl_substrate,hab_spline = T,env_spline = T,spline_k = 3)
+  toc()
+  
+  # make diagnostic plots
+  tic(paste("Making diagnostic plots for",species))
+  diagplots <- make_diagnostic_plots(m)
+  toc()
+  
+  # make env affinity plots
+  tic(paste("Making environmental affinity plots for",species))
+  envplots <- plot_all_env_relationships(m)
+  toc()
+  
+  # make projections
+  tic(paste("Making projections for",species))
+  hadl <- make_predictions(m,'hadl') %>% mutate(esm='hadl')
+  ipsl <- make_predictions(m,'ipsl') %>% mutate(esm='ipsl')
+  gfdl <- make_predictions(m,'gfdl') %>% mutate(esm='gfdl')
+  all_projections <- bind_rows(hadl,ipsl,gfdl)
+  toc()
+  
+  # make maps
+  tic(paste("Making maps for",species))
+  hadl_predmap <- make_three_maps(hadl)
+  hadl_diffmap <- make_two_diff_maps(hadl)
+  ipsl_predmap <- make_three_maps(ipsl)
+  ipsl_diffmap <- make_two_diff_maps(ipsl)
+  gfdl_predmap <- make_three_maps(gfdl)
+  gfdl_diffmap <- make_two_diff_maps(gfdl)
+  toc()
+  
+  # save everything
+  tic(paste("Saving everything for",species))
+  save.dir=paste0(dir.out,"/",species,"/")
+  if(!dir.exists(save.dir)) dir.create(save.dir)
+  write_rds(all_projections,file=paste0(save.dir,"projection_3ESMs.rds"))
+  ggsave(paste0(save.dir,'diagnostic_plots.png'),diagplots,h=8,w=8,bg='white')
+  ggsave(paste0(save.dir,'environmental_affinities.png'),envplots,h=8,w=8,bg='white')
+  ggsave(paste0(save.dir,'hadl_preds.png'),hadl_predmap,h=5,w=8,bg='white')
+  ggsave(paste0(save.dir,'ipsl_preds.png'),ipsl_predmap,h=5,w=8,bg='white')
+  ggsave(paste0(save.dir,'gfdl_preds.png'),gfdl_predmap,h=5,w=8,bg='white')
+  ggsave(paste0(save.dir,'hadl_diffmap.png'),hadl_diffmap,h=8,w=5.3,bg='white')
+  ggsave(paste0(save.dir,'ipsl_diffmap.png'),ipsl_diffmap,h=8,w=5.3,bg='white')
+  ggsave(paste0(save.dir,'gfdl_diffmap.png'),gfdl_diffmap,h=8,w=5.3,bg='white')
+  toc()
+  
+  print(paste("Model and plots finished for",species))
+  toc()
+}
+```
+
+# Apply to Species
+
+California halibut: depth and substrate
+```{r}
+process_species_model(species='california halibut',incl_depth = T,incl_substrate = T)
+```
+

@@ -32,6 +32,16 @@ Atlantis_catch <- catch %>%
   summarise(totcatch=sum(totcatch)) %>% 
   ungroup()
 
+# what catch are we missing?
+# MISSING PORTS: PUGET SOUND, 'UNKNOWN PORTS', COASTAL WASHINGTON
+
+catch_unaccounted <- catch %>% 
+  left_join(fleets,by=c("iopac","fishery_type")) %>% 
+  filter(is.na(Index)) %>% 
+  group_by(iopac,Code,Index,Name,FG) %>% 
+  summarise(totcatch=sum(totcatch)) %>% 
+  ungroup()
+
 # join and calculate F by fleet
 Finit <- Atlantis_catch %>% 
   left_join(bio,by="FG") %>% 
@@ -63,7 +73,8 @@ catch_block <- Finit %>%
   dplyr::select(prmName,Index,totcatch) %>% 
   pivot_wider(names_from="Index",values_from = "totcatch")
 
-options(scipen = 0)
+options(scipen = 100)
+# options(scipen = 0)
 # write!
 write.table(harvest_block,here::here('data','atlantis','mFC_by_fleet.txt'),quote=F,row.names=F)
 write.table(catch_block,here::here('data','atlantis','catch_by_fleet.txt'),quote=F,row.names=F )
