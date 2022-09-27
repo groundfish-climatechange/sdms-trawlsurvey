@@ -1,0 +1,254 @@
+---
+title: "Set up Fishing Footprints for Atlantis"
+author: "Owen Liu"
+date: '2022-09-09'
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(rbgm)
+library(here)
+library(rnaturalearth)
+library(sf)
+library(units)
+select <- dplyr::select
+options(dplyr.summarise.inform=F)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+
+options(dplyr.summarise.inform = FALSE)
+```
+
+# Import Data
+
+Groundfish fishing footprints by port
+
+```{r} 
+# import footprints
+fp <- read_sf(here('data','atlantis','logbook_all_pvcs.shp'))
+```
+
+Tribal Usual and Accustomed Areas, with areas deeper than 700 fathoms masked out
+
+```{r}
+# tribal UAs
+tribes <- read_sf(here('data','atlantis','tribal_U&As_with_700fm_cutoff.shp')) %>% 
+  st_transform(st_crs(fp))
+```
+
+Generic fleet radii
+
+```{r}
+fleet_rad <- read_csv(here('data','atlantis','fisheries_radii.csv'))
+```
+Background and coastline map
+
+```{r}
+# load west cost land for mapping
+coaststates <- ne_states(country='United States of America',returnclass = 'sf') %>% 
+  filter(name %in% c('California','Oregon','Washington','Nevada')) %>%
+  st_transform(st_crs(fp))
+```
+
+Atlantis .bgm
+
+```{r}
+# import Atlantis bgm as sf
+# load the file
+bgm <- read_bgm(here('data','grids','CalCurrentV3_utm.bgm'))
+names(bgm)
+atlantis_sf <- box_sf(bgm) %>% select(label,.bx0,box_id,poly_area=area)
+st_crs(atlantis_sf) <- st_crs(attr(atlantis_sf$geometry, "crs")$proj)
+# transform to same crs as the footprints
+atlantis_sf <- atlantis_sf %>% st_transform(st_crs(fp))
+```
+Atlantis fleet definitions
+```{r}
+# fleets (with a manually-added set of columns to match to catch data)
+fleets <- read_csv(here::here('data','atlantis','Atlantis_54fleets_definitions.csv'))
+```
+
+
+# Organize Footprints
+
+## Get most recent groundfish footprints
+```{r}
+## filter footprints to just the most recent period (period 4, catch shares)
+# unless the port does not have a footprints for period 4, then use the most recent one
+fp4 <- fp %>%  
+  group_by(port_name) %>% 
+  slice_max(n=1,order_by = period) %>% 
+  ungroup()
+```
+
+
+## Edit tribal areas
+
+IMPORTANT UPDATE: MAKAH ARE THE ONLY TRIBE THAT USE TRAWL. 
+So, tribal trawl will use the Makah footprint. Tribal non-trawl will use the combined (all-tribe U&As) footprints.
+
+```{r}
+# IMPORTANT UPDATE: MAKAH ARE THE ONLY TRIBE THAT USE TRAWL
+# so, tribal trawl will use the Makah footprint
+# tribal non-trawl will use the combined (all-tribe U&As) footprints
+tribes_trawl_fp <- tribes %>% 
+  filter(UA=="Makah")
+tribes_nontrawl_fp <- tribes %>% 
+  summarise() %>% 
+  mutate(UA="all tribes")
+tribes_trawl_nontrawl <- bind_rows(tribes_trawl_fp,tribes_nontrawl_fp) %>% 
+  mutate(fleet=c("Tribal trawl","Tribal non-trawl"))
+```
+
+## Build Radii for Generic Fleets
+For the generic Atlantis fleets, we use radii from a focal port to establish fishing areas. Here, we build the polygons with those radii.
+
+```{r}
+fleet_rad_polys <- fleet_rad %>% 
+  filter(!is.na(km)) %>% 
+  st_as_sf(coords=c("Longitude","Latitude"),crs=4326) %>% 
+  # convert to planar crs
+  st_transform(st_crs(fp)) %>% 
+  # buffer using designated radii
+  st_buffer(dist=.$km*1000) %>% 
+  # mask out the coastline
+  st_difference(coaststates %>% summarise())
+```
+## Visualize footprints pre-join
+
+Tribal
+
+```{r}
+tbbox=st_bbox(tribes_trawl_nontrawl)
+ggplot()+
+  geom_sf(data=coaststates)+
+  geom_sf(data=tribes_trawl_nontrawl,aes(fill=fleet,linetype=fleet))+
+  coord_sf(xlim=c(tbbox[1],tbbox[3]),ylim=c(tbbox[2],tbbox[4]))+
+  facet_wrap(~fleet)
+```
+Groundfish trawl
+```{r,fig.width=6,fig.height=8}
+bbox <- st_bbox(atlantis_sf)
+ggplot()+
+  geom_sf(data=coaststates)+
+  geom_sf(data=atlantis_sf,fill='lightblue')+
+  geom_sf(data=fp4,aes(fill=port_name))+
+  labs(fill="IOPAC port")+
+  coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))
+```
+Generic fleets
+
+```{r,fig.height=8,fig.width=6}
+ggplot()+
+  geom_sf(data=coaststates)+
+  geom_sf(data=atlantis_sf,fill='lightblue')+
+  geom_sf(data=fleet_rad_polys %>% filter(grepl("Coastal",Name)),aes(fill=Name),alpha=0.5)+
+  coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))
+ggplot()+
+  geom_sf(data=coaststates)+
+  geom_sf(data=atlantis_sf,fill='lightblue')+
+  geom_sf(data=fleet_rad_polys %>% filter(!grepl("Coastal",Name)),aes(fill=Name),alpha=0.5)+
+  coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))
+```
+
+# Bind footprints
+
+Join these disparate polygon datasets and give them consistent names that match Atlantis fleet names
+
+```{r}
+# fix groundfish trawl footprint fleet names
+fp_trawl <- fp4 %>% 
+  left_join(fleets,by=c("port_name"="iopac")) %>% 
+  filter(fishery_type=="bottom trawl") %>% 
+  select(Code,Index,Name)
+```
+
+```{r}
+# fix tribal fleet names
+fp_tribes <- tribes_trawl_nontrawl %>% 
+  # just do this manually
+  mutate(Index=c(51,52),Code=c("TribalTrawl","TribalNonTrawl"),Name=c("TribalTrawl","TribalNonTrawl")) %>% 
+  # mutate(area=st_area(.))%>% 
+  select(Code,Index,Name)
+```
+
+```{r}
+# fix generic fleet names
+fp_generic <- fleet_rad_polys %>% 
+  select(Code,Index,Name)
+```
+
+```{r}
+# join
+fp_all <- bind_rows(fp_trawl,fp_tribes,fp_generic) %>% 
+  arrange(Index)
+```
+
+# Spatial Overlay on Atlantis Polygons
+
+Groundfish footprints
+
+```{r}
+fp_atlantis_join <- fp_all %>% 
+  st_intersection(atlantis_sf) %>% 
+  # calculate area of each individual footprint/polygon overlap
+  mutate(area_overlap=st_area(.)) %>% 
+  # then, calculate each of these areas as a proportion of total polygon area
+  mutate(prop_poly=area_overlap/poly_area) %>% 
+  mutate(prop_poly=as.numeric(prop_poly)) %>% 
+  mutate(code_name=paste0("MPA",Code," 89"))
+
+# arrange final output as data frames (port by polygon by proportion)
+fp_prop_polys<- fp_atlantis_join %>% 
+  mutate(prop_poly=round(prop_poly,digits=6)) %>% 
+  st_set_geometry(NULL) %>%
+  select(Index,code_name,box_id,prop_poly) %>% 
+  #fill in zeroes for other, non-represented boxes
+  complete(nesting(Index,code_name),box_id=full_seq(c(0,88),1),fill=list(prop_poly=0)) %>% 
+  arrange(Index,code_name,box_id) %>% 
+  dplyr::select(code_name,box_id,prop_poly) %>% 
+  pivot_wider(names_from="box_id",values_from = "prop_poly")
+```
+
+# Visualize Results
+
+Example overlays of footprint polygons and Atlantis polygons
+
+```{r}
+fp_atlantis_join %>% 
+  filter(code_name=="11_AstoriaGroundfishTrawl") %>% 
+  ggplot()+geom_sf(aes(fill=prop_poly))+
+  labs(fill="Proportion of\nAtlantis Polygon")
+
+fp_atlantis_join %>% 
+  filter(code_name=="52_TribalNonTrawl") %>% 
+  ggplot()+geom_sf(aes(fill=prop_poly))+
+  labs(fill="Proportion of\nAtlantis Polygon")
+```
+
+# Write output
+
+```{r}
+options(scipen = 100)
+# options(scipen = 0)
+# write!
+write.table(fp_prop_polys,here::here('data','atlantis','mpas_by_fleet.txt'),quote=F,row.names=F,col.names=F)
+
+write_sf(fleet_rad_polys,here::here('data','atlantis','cps_footprints.shp'))
+```
+

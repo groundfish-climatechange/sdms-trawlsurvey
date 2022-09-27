@@ -28,7 +28,7 @@ Write functions utilizing `sdmTMB` to fit and project models for west coast grou
 *Note: All the data required for running the functions here have been produced in the `sdmTMB data construction.Rmd` script.
 
 ```{r, message=F, echo=F, include=F}
-rmarkdown::render(here::here('scripts','sdmTMB data construction.Rmd'),quiet=TRUE)
+rmarkdown::render(here::here('scripts','sdmTMB-data-construction.Rmd'),quiet=TRUE)
 ```
 
 # Functions for Fitting
@@ -2028,26 +2028,34 @@ lic_D_sims <- function(sims_df1,sims_df2){
 ## Fishing Footprints
 
 ```{r}
-# calc_footprint_dens_sims <- function(ens_preds,fp=footprints){
-#   d <- ens_preds %>% 
-#     filter(year>2019) %>% 
-#     mutate(est=purrr::map(data,exp)) %>%
-#     # mutate(est=exp(ens_est)) %>%
-#     st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
-#     st_join(footprints) %>% 
-#     st_set_geometry(NULL) %>% 
-#     filter(!is.na(port_name)) %>% 
-#     group_by(port_name,year) %>% 
-#     summarise(mean_cpue=purrr::map_dbl(est,mean),
-#               cpue5=purrr::map_dbl(est,quantile,probs=0.05),
-#               cpue95=purrr::map_dbl(est,quantile,probs=0.95),
-#               mean_log_cpue=purrr::map_dbl(data,mean),
-#               log_cpue5=purrr::map_dbl(data,quantile,probs=0.05),
-#               log_cpue95=purrr::map_dbl(data,quantile,probs=0.95)) %>% 
-#     ungroup()
-# 
-#   d
-# }
+calc_footprint_dens_sims <- function(ens_preds,fp=footprints){
+  d <- ens_preds %>%
+    filter(year>2019) %>%
+    mutate(est=purrr::map(data,exp)) %>%
+    # mutate(est=exp(ens_est)) %>%
+    st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
+    st_join(footprints) %>%
+    st_set_geometry(NULL) %>%
+    filter(!is.na(port_name)) %>%
+    group_by(port_name,year) %>%
+    summarise(mean_cpue=purrr::map_dbl(est,mean),
+              cpue5=purrr::map_dbl(est,quantile,probs=0.05),
+              cpue95=purrr::map_dbl(est,quantile,probs=0.95),
+              mean_log_cpue=purrr::map_dbl(data,mean),
+              log_cpue5=purrr::map_dbl(data,quantile,probs=0.05),
+              log_cpue95=purrr::map_dbl(data,quantile,probs=0.95)) %>%
+    ungroup() %>% 
+    group_by(port_name,year) %>%
+    summarise(mean_cpue=mean(mean_cpue),
+              cpue5=mean(cpue5),
+              cpue95=mean(cpue95),
+              mean_log_cpue=mean(mean_log_cpue),
+              log_cpue5=mean(log_cpue5),
+              log_cpue95=mean(log_cpue95)) %>% 
+    ungroup()
+    
+  d
+}
 
 # Could also calculate a relative change timeseries (% change from 2020 baseline)
 calc_footprint_reldens_sims <- function(sims_df,fp=footprints){
@@ -2168,6 +2176,108 @@ LIC_D_mean_change <- function(df1,df2){
               L_sd=sd(deltaL)) %>% 
     ungroup()
   df_out
+}
+```
+
+Biomass-weighted overlap
+
+```{r}
+bwo_sims <- function(sims_df1,sims_df2){
+  
+  p1 <- sims_df1 %>%
+    group_by(year,esm) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/max(exp(x),na.rm=T))) %>%
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='s_p1') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,s_p1) %>% 
+    ungroup()
+  
+  p2 <- sims_df2 %>%
+    group_by(year,esm) %>%
+    mutate(across(contains('sim'),function(x) exp(x)/max(exp(x),na.rm=T))) %>% 
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='s_p2') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,s_p2) %>% 
+    ungroup()
+  
+  pjoint <- p1 %>% 
+    left_join(p2,by=c('year','esm','longitude','latitude','port_name','sim')) %>% 
+    group_by(year,esm,port_name,sim) %>% 
+    summarise(bwo=sum(s_p1*s_p2)/sum(s_p2)) %>% 
+    ungroup()
+  
+  pjoint
+
+}
+```
+
+Bhattacharyya's 
+
+```{r}
+bhat_sims <- function(sims_df1,sims_df2){
+  
+  p1 <- sims_df1 %>%
+    group_by(year,esm) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>%
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p1') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p1) %>% 
+    ungroup()
+  
+  p2 <- sims_df2 %>%
+    group_by(year,esm) %>%
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p2') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p2) %>% 
+    ungroup()
+  
+  pjoint <- p1 %>% 
+    left_join(p2,by=c('year','esm','longitude','latitude','port_name','sim')) %>% 
+    group_by(year,esm,port_name,sim) %>% 
+    summarise(bhat=sum(sqrt(p_p1*p_p2))) %>% 
+    ungroup()
+  
+  pjoint
+
+}
+```
+
+Asymmetrical alpha
+
+```{r}
+aa_sims <- function(sims_df1,sims_df2){
+  
+  p1 <- sims_df1 %>%
+    group_by(year,esm) %>% 
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>%
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p1') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p1) %>% 
+    ungroup()
+  
+  p2 <- sims_df2 %>%
+    group_by(year,esm) %>%
+    mutate(across(contains('sim'),function(x) exp(x)/sum(exp(x),na.rm=T))) %>% 
+    left_join(roms_ports_match,by=c('latitude','longitude')) %>% 
+    filter(!is.na(port_name)) %>% 
+    pivot_longer(contains('sim'),names_to='sim',values_to='p_p2') %>% 
+    dplyr::select(year,esm,port_name,longitude,latitude,sim,p_p2) %>% 
+    ungroup()
+  
+  pjoint <- p1 %>% 
+    left_join(p2,by=c('year','esm','longitude','latitude','port_name','sim')) %>% 
+    group_by(year,esm,port_name,sim) %>% 
+    summarise(aa=sum(p_p1*p_p2)/sqrt(sum(p_p2^2))) %>% 
+    ungroup()
+  
+  pjoint
+
 }
 ```
 

@@ -28,7 +28,7 @@ bio <- bio %>%
 Atlantis_catch <- catch %>% 
   left_join(fleets,by=c("iopac","fishery_type")) %>% 
   filter(!is.na(Index)) %>% 
-  group_by(Code,Index,Name,FG) %>% 
+  group_by(Code,Index,Name,FG,fishery_type) %>% 
   summarise(totcatch=sum(totcatch)) %>% 
   ungroup()
 
@@ -78,4 +78,100 @@ options(scipen = 100)
 # write!
 write.table(harvest_block,here::here('data','atlantis','mFC_by_fleet.txt'),quote=F,row.names=F)
 write.table(catch_block,here::here('data','atlantis','catch_by_fleet.txt'),quote=F,row.names=F )
-write_csv(Finit,here('data','atlantis','Fcalc_by_fleet.csv'))
+write_csv(Finit,here::here('data','atlantis','Fcalc_by_fleet.csv'))
+
+
+#### Visualize? ####
+spp_match <- read_csv(here('data','atlantis','sp_match_catch_FG_Owen.csv'))
+fg_match <- read_csv(here('data','atlantis','atlantis_fg_match.csv')) %>% 
+  rename(FG=`Atlantis code`,grp_name=`Group name`)
+
+FDC_catchplot <- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="FDC",totcatch>20) %>% 
+  ggplot(aes(fct_reorder(Name,totcatch,.desc = T),totcatch))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Deep Small Rockfish Catch")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+
+FDC_Fplot <- Finit %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="FDC",totcatch>20) %>% 
+  ggplot(aes(fct_reorder(Name,mFC,.desc = T),mFC))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Deep Small Rockfish Daily F")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+
+FMN_catchplot <- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="FMN",totcatch>100) %>% 
+  ggplot(aes(fct_reorder(Name,totcatch,.desc = T),totcatch))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Sablefish Catch")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+FMN_Fplot <- Finit %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="FMN",totcatch>100) %>% 
+  ggplot(aes(fct_reorder(Name,mFC,.desc = T),mFC))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Sablefish Daily F")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+
+DUN_catchplot <- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="DUN",totcatch>100) %>% 
+  ggplot(aes(fct_reorder(Name,totcatch,.desc = T),totcatch))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Dungeness Catch")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+
+DUN_Fplot <- Finit %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="DUN",totcatch>100) %>% 
+  ggplot(aes(fct_reorder(Name,mFC,.desc = T),mFC))+
+  geom_col()+
+  labs(x="Atlantis Fleet",y="Dungeness Daily F")+
+  theme(axis.text.x=element_text(angle=45,vjust=0.9,hjust=0.8))
+
+FDC_catchplot
+FDC_Fplot
+FMN_catchplot
+FMN_Fplot
+DUN_catchplot
+DUN_Fplot
+
+# which FGs appear in all fishery types?
+x<- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  group_by(FG,fishery_type) %>% 
+  summarise(tot=sum(totcatch)) %>% 
+  ungroup() %>% 
+  group_by(FG) %>% 
+  filter(tot>0) %>% 
+  ungroup()
+FMN_pie <- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="FMN") %>% 
+  group_by(FG,fishery_type) %>% 
+  summarise(tot=sum(totcatch)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x="",y=tot,fill=fishery_type))+
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0)+
+  theme_void()+
+  labs(fill="Fishery\nType",title="Sablefish")
+FMN_pie
+
+DOG_pie <- Atlantis_catch %>% 
+  left_join(fg_match) %>% 
+  filter(FG=="DOG") %>% 
+  group_by(FG,fishery_type) %>% 
+  summarise(tot=sum(totcatch)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x="",y=tot,fill=fishery_type))+
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0)+
+  theme_void()+
+  labs(fill="Fishery\nType",title="Spiny Dogfish")
+DOG_pie
+
