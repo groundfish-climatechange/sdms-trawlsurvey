@@ -48,13 +48,24 @@ habdat <- raster(here('data','substrate','bef','wc_sub_hms_i_UTM.tif'))
 roms_depths <- tidync(here('data','grids','bottom_layer_depth.nc')) %>% hyper_tibble() %>% 
   mutate(depth_m=-bld)
 
+roms_ll_key <- roms_depths %>% arrange(desc(lat),lon) %>% 
+  mutate(roms_cell=row_number()) %>% 
+  dplyr::select(roms_cell,lon,lat,depth_m)
+
+write_rds(roms_ll_key,here::here('data','roms_latlon_depth_key_topleft_start.rds'))
+```
+
+```{r}
 res_roms <- 0.1
 roms_lat <- unique(roms_depths$lat)
 roms_lon <- unique(roms_depths$lon)
 # make the raster, with small adjustment because R usually interprets grid corners, not grid centers
 roms_grid <- raster(nrows=length(roms_lat),ncols=length(roms_lon),
                     xmn=min(roms_lon)-res_roms/2,xmx=max(roms_lon)+res_roms/2,
-                    ymn=min(roms_lat)-res_roms/2,ymx=max(roms_lat)+res_roms/2,crs=4326,vals=roms_depths$depth_m)
+                    ymn=min(roms_lat)-res_roms/2,ymx=max(roms_lat)+res_roms/2,crs=4326,
+                    # vals=roms_depths$depth_m)
+                    # vals=roms_depths %>% arrange(lon,desc(lat)) %>% pull('depth_m'))
+                    vals=roms_depths %>% arrange(desc(lat),lon) %>% pull('depth_m'))
 
 # ROMS grid, converted to polygons
 # roms_grid <- raster(here::here('data','substrate','bottom_layer_depth.grd'))
@@ -64,12 +75,14 @@ roms_sf <- rasterToPolygons(roms_cellnums) %>% st_as_sf()
 
 ```{r}
 # cell xy
-cellxy <- xyFromCell(roms_grid,cell=1:length(roms_grid))
-#save a ROMS latitude/longitude key
-#we want to save the upper left corner of the cell, not the centroid
-roms_ll_key <- tibble(roms_cell=1:length(roms_grid),lon=cellxy[,1]-0.05,lat=cellxy[,2]+0.05,depth_m=getValues(roms_grid)*-1)
-# save the key
-write_rds(roms_ll_key,here::here('data','roms_latlon_depth_key_topleft_start.rds'))
+# cellxy <- xyFromCell(roms_grid,cell=1:length(roms_grid))
+# #save a ROMS latitude/longitude key
+# #we want to save the upper left corner of the cell, not the centroid
+# roms_ll_key <- tibble(roms_cell=1:length(roms_grid),lon=cellxy[,1]-0.05,lat=cellxy[,2]+0.05,depth_m=getValues(roms_grid)*-1)
+# 
+# roms_ll_key %>% ggplot(aes(lon,lat,col=depth_m))+geom_point()
+# # save the key
+# # write_rds(roms_ll_key,here::here('data','roms_latlon_depth_key_topleft_start.rds'))
 ```
 
 

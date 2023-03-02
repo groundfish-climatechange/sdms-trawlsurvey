@@ -955,7 +955,7 @@ ggsave(here('model output','dts paper','footprint_cpue_ts.png'),footprint_ts_plo
 ```
 
 ```{r,fig.height=8,fig.width=4}
-footprint_reldens_ts<-purrr::map2_df(list(dover_ens,sable_ens,ss_ens,ls_ens),c("Dover Sole","Sablefish","Shortspine","Longspine"),function(x,y)calc_footprint_reldens_ts(x,what="df") %>% mutate(species=y)) %>% 
+footprint_reldens_ts<-purrr::map2_df(list(dover_ens_all,sable_ens_all,ss_ens_all,ls_ens_all),c("Dover Sole","Sablefish","Shortspine","Longspine"),function(x,y)calc_footprint_reldens_ts(x,what="df") %>% mutate(species=y)) %>% 
   mutate(species=factor(species,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
 
 footprint_reldens_ts_plot <- footprint_reldens_ts %>% 

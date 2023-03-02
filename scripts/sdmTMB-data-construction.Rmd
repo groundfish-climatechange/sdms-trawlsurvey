@@ -414,8 +414,7 @@ roms_dist_to_coast <- read_rds(here::here('data','roms_distance_to_shore.rds'))
 ```{r}
 hab <- read_rds(here('data','substrate','prop_hard_by_ROMS_cell.rds'))
 # the roms grid, to match depth and habitat values to lat/lon (from process_substrate_data.Rmd)
-roms_ll <- read_rds(here::here('data','roms_latlon_key_topleft_start.rds')) %>% 
-  mutate(roms_cell=row_number())
+roms_ll <- read_rds(here::here('data','roms_latlon_depth_key_topleft_start.rds'))
 
 hab <- hab %>% 
   left_join(roms_ll,by="roms_cell") %>% 
@@ -492,7 +491,7 @@ ggsave(here('model output','dts paper','dts_importance_port_group.png'),dts_imp_
 ```
 For now (August 2022) choose all six ports whose mean share of DTS relative to all groundfish FMP landings is >60% (Brookings, Crescent City, Eureka, Fort Bragg, Morro Bay, Coos Bay)
 
-```{r,eval=F}
+```{r,eval=F,fig.height=6,fig.width=8}
 # Trawl footprints for DTS species
 footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp')) %>% 
   st_transform(st_crs(projection_extent)) %>% 
@@ -501,11 +500,15 @@ footprints <- read_sf(here('data','DTS footprints','DTS_footprints_combined.shp'
 
 bb <- st_bbox(footprints)
 ggplot()+
-  geom_sf(data=coast,fill='grey70')+
+  geom_sf(data=coast,fill='grey80')+
   geom_sf(data=footprints,aes(fill=port_name),alpha=0.6)+
-  xlim(bb[1],bb[3])+ylim(bb[2],bb[4])+
-  coord_sf(datum=NA)+
-  theme_void()+
+  xlim(bb[1],bb[3]+250)+ylim(bb[2],bb[4])+
+  scale_fill_npg()+
+  scale_color_npg()+
+  # coord_sf(datum=NA)+
+  # theme_void()+
+  theme(axis.text.x = element_text(angle=45,vjust=1,hjust=1),
+        legend.position=c(0.7,0.5))+
   scale_fill_discrete(name="Port Group")
 
 port_match <- tibble(port_name=c("Fort Bragg","Coos Bay","Astoria","Eureka","Morro Bay","North Puget Sound","Brookings","Crescent City")) %>%
@@ -539,7 +542,7 @@ fp_dtc <- roms_ports_match %>%
 ```{r}
 v <- read_csv(here('data','dts_landings.csv'),show_col_types = F) %>% 
   rename(name=`NMFS Name`) %>% 
-  mutate(Year=as.integer(Year)) %>% 
+  mutate(Year=as.integer(Year)) %>%
   mutate(lab=case_when(
     name=="SABLEFISH" ~ "Sablefish",
     name=="SOLE, DOVER" ~ "Dover Sole",

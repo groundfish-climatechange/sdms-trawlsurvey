@@ -1,0 +1,22 @@
+---
+title: "Trawl Survey Bio Samples"
+author: "Owen Liu"
+date: '2022-10-31'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# remotes::install_github("pfmc-assessments/nwfscSurvey")
+library(nwfscSurvey)
+```
+
+```{r}
+haul <- PullHaul.fn(SurveyName = "NWFSC.Combo")
+catch <- PullCatch.fn(SurveyName = "NWFSC.Combo")
+bio <- PullBio.fn(SurveyName = "NWFSC.Combo")
+```
+

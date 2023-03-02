@@ -28,6 +28,7 @@ library(future)
 library(tictoc)
 library(ggsci)
 library(ggpubr)
+library(ggnewscale)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -397,52 +398,77 @@ fourspp_ind_all <- dover_ind_all %>% mutate(spp="Dover sole") %>%
   bind_rows(ls_ind_all %>% mutate(spp="Longspine thornyhead")) %>% 
   mutate(spp=factor(spp,levels=c("Dover sole","Sablefish","Shortspine thornyhead","Longspine thornyhead")))
 
-fourspp_ind_plot <- fourspp_ind_all %>% 
-  filter(year>2021) %>% 
-  ggplot(aes(year,wtd.log_est_smooth,
+# get a sense for historical variability (95% quantiles?)
+fourspp_ind_range <- fourspp_ind_all %>% 
+  filter(year%in%c(1985:2010)) %>% 
+  group_by(spp) %>% 
+  mutate(upper=wtd.log_est_smooth+wtd.se_est_smooth,
+         lower=wtd.log_est_smooth-wtd.se_est_smooth) %>% 
+  summarise(h5=quantile(lower,0.05,na.rm=T),
+            h95=quantile(upper,0.95,na.rm=T))
+
+fourspp_ind_plot <- ggplot()+
+  geom_ribbon(data=fourspp_ind_all,
+              aes(year,wtd.log_est_smooth,
              ymin=wtd.log_est_smooth-wtd.se_est_smooth,
              ymax=wtd.log_est_smooth+wtd.se_est_smooth,
-             color=esm,fill=esm))+
-  geom_ribbon(alpha=0.5,fill='grey80',linetype=0)+
-  geom_line(size=1.5)+
-  scale_x_continuous(expand=c(0,0))+
+             group=esm),
+             fill='gray80',
+             alpha=0.5,linetype=0)+
+  geom_line(data=fourspp_ind_all,
+            aes(year,wtd.log_est_smooth,
+            color=esm),
+            size=1.5)+
+  geom_linerange(data=fourspp_ind_range,
+                 aes(ymin=h5,ymax=h95),x=2021,size=2.5)+
+  geom_linerange(data=fourspp_ind_range,
+                 aes(ymin=h5,ymax=h95),x=2100,size=2.5)+
+  scale_x_continuous(limits=c(2021,2100),expand=c(0,0))+
   facet_wrap(~spp,nrow=4,scales='free_y')+
   scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
   scale_fill_manual(values=c("#009175","#7E0018","#00C2F9"))+
   labs(x="Year",y="Coastwide Index of Abundance",color="ESM",fill="ESM")+
   theme(panel.background = element_rect(fill=NA,color='black'),
         legend.position = 'bottom',
-        axis.text.x = element_text(angle=30,vjust=1,hjust=1))
+        axis.text.x = element_text(angle=30,vjust=1,hjust=1),
+        strip.text = element_text(size=12))
 
-# fourspp_ind_fig <- ggdraw()+
-#   draw_plot(fourspp_ind_plot)+
-#   draw_image(here('data','icons','dover1.png'),hjust=.35,vjust=-.37,scale=0.1)+
-#   draw_image(here('data','icons','sablefish.png'),hjust=-.15,vjust=-.37,scale=0.12)+
-#   draw_image(here('data','icons','shortspine.png'),hjust=.35,vjust=.01,scale=0.1)+
-#   draw_image(here('data','icons','longspinet.png'),hjust=-.15,vjust=.01,scale=0.1)
 fourspp_ind_fig <- ggdraw()+
   draw_plot(fourspp_ind_plot)+
-  draw_image(here('data','icons','dover1.png'),hjust=.17,vjust=-.43,scale=0.23)+
-  draw_image(here('data','icons','sablefish.png'),hjust=.17,vjust=-.12,scale=0.25)+
-  draw_image(here('data','icons','shortspine.png'),hjust=.17,vjust=.08,scale=0.23)+
-  draw_image(here('data','icons','longspinet.png'),hjust=.17,vjust=.22,scale=0.23)
+  draw_image(here('data','icons','dover_sil.png'),hjust=.17,vjust=-.41,scale=0.23)+
+  draw_image(here('data','icons','sablefish_sil.png'),hjust=.17,vjust=-.1,scale=0.25)+
+  draw_image(here('data','icons','shortspine_sil.png'),hjust=.17,vjust=.1,scale=0.26)+
+  draw_image(here('data','icons','longspine_sil.png'),hjust=.17,vjust=.22,scale=0.23)
 fourspp_ind_fig
 ```
 Coastwide environmental change
 
 ```{r,fig.height=7,fig.width=3}
 coast_t_o_hist <- roms %>% 
-  dplyr::select(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,latitude,longitude,year) %>% 
-  filter(year%in%c(1985:2010)) %>% 
-  group_by(longitude,latitude) %>% 
-  summarise(t=mean(mean_bt_30d_ipsl),oxy=mean(mean_oxy_bottom_30d_ipsl)) %>% 
+  dplyr::select(mean_bt_30d_ipsl,mean_bt_30d_gfdl,mean_bt_30d_hadl,
+                mean_oxy_bottom_30d_ipsl,mean_oxy_bottom_30d_gfdl, mean_oxy_bottom_30d_hadl,
+                latitude,longitude,year) %>% 
+  filter(year%in%c(1985:2010)) %>%
+  # ensemble mean values
+  mutate(oxy_ens=(mean_oxy_bottom_30d_ipsl+mean_oxy_bottom_30d_gfdl+mean_oxy_bottom_30d_hadl)/3,
+         t_ens=(mean_bt_30d_ipsl+mean_bt_30d_gfdl+mean_bt_30d_hadl)/3) %>% 
+  group_by(longitude,latitude) %>%
+  summarise(t=mean(t_ens),
+            oxy=mean(oxy_ens)) %>% 
   ungroup() 
 coast_t_o_fut <- roms %>% 
-  dplyr::select(mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,latitude,longitude,year) %>% 
+  dplyr::select(mean_bt_30d_ipsl,mean_bt_30d_gfdl,mean_bt_30d_hadl,
+                mean_oxy_bottom_30d_ipsl,mean_oxy_bottom_30d_gfdl, mean_oxy_bottom_30d_hadl,
+                latitude,longitude,year) %>% 
   filter(year%in%c(2075:2100)) %>% 
+  # ensemble mean values
+  mutate(oxy_ens=(mean_oxy_bottom_30d_ipsl+mean_oxy_bottom_30d_gfdl+mean_oxy_bottom_30d_hadl)/3,
+         t_ens=(mean_bt_30d_ipsl+mean_bt_30d_gfdl+mean_bt_30d_hadl)/3) %>% 
   group_by(longitude,latitude) %>% 
-  summarise(t_fut=mean(mean_bt_30d_ipsl),oxy_fut=mean(mean_oxy_bottom_30d_ipsl)) %>% 
+  summarise(t_fut=mean(t_ens),
+            oxy_fut=mean(oxy_ens)) %>% 
   ungroup()
+
 coast_t_o <- coast_t_o_hist %>% 
   left_join(coast_t_o_fut,by=c("longitude","latitude")) %>% 
   mutate(diff_t=t_fut-t,diff_o=oxy_fut-oxy)
@@ -475,9 +501,9 @@ coast_t_o_plot
 ```
 
 ```{r,fig.height=7,fig.width=6}
-fig1 <- plot_grid(coast_t_o_plot,fourspp_ind_fig,ncol=2,labels='auto',rel_widths = c(0.8,1))
+fig1 <- plot_grid(coast_t_o_plot,NULL,fourspp_ind_fig,ncol=3,labels=c('a','','b'),rel_widths = c(0.8,-0.1,1))
 fig1
-ggsave(here('model output','dts paper','fig1.png'),fig1,w=6,h=7)
+ggsave(here('model output','dts paper','fig1.png'),fig1,w=6.5,h=7)
 ```
 
 ## Figure 2
@@ -533,7 +559,7 @@ fp_lat <- footprints %>% st_centroid() %>% st_transform(4326) %>%
 
 Make the plot
 
-```{r}
+```{r,fig.width=8,fig.height=6}
 four_spp_dist_to_shore_change <- ggplot(data=fourspp_reldist_change,
              aes(x=lat,y=change,fill=spp_plotting,col=spp_plotting))+
   geom_point(color='gray80',alpha=0.2,size=0.7)+
@@ -551,12 +577,10 @@ four_spp_dist_to_shore_change <- ggplot(data=fourspp_reldist_change,
   # theme(legend.position = c(0.8,0.7))+
   labs(y="Change in Distance from Shore (km)",x="Latitude",col="Species",fill="Species")+
   theme(panel.background = element_rect(fill=NA,color='black'))
-
-four_spp_dist_to_shore_change
 ```
 
 ```{r}
-ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist_to_shore_change,w=8,h=6)
+# ggsave(here('model output','dts paper','four species distance from shore.png'),four_spp_dist_to_shore_change,w=8,h=6)
 ```
 
 Depth change
@@ -592,20 +616,124 @@ fourspp_depth_plot
 ```
 
 ```{r}
-ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth_plot,w=6,h=4)
+# ggsave(here('model output','dts paper','fig_depth_change_four_spp.png'),fourspp_depth_plot,w=6,h=4)
 ```
 
 
-```{r,fig.width=7,fig.height=5}
+```{r,fig.width=8,fig.height=7.5}
+
+dist_to_shore_fig <- ggdraw()+
+  draw_plot(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,0.1,0.5),'cm'))+guides(color='none',fill='none'))+
+  draw_line(x=c(0.27,0.37),y=c(0.84,0.85),size=1,lineend = "round",linetype=2)+
+  draw_line(x=c(0.255,0.35),y=c(0.8,0.6),size=1,lineend = "round",linetype=2)+
+  draw_line(x=c(0.29,0.35),y=c(0.76,0.7),size=1,lineend = "round",linetype=2)+
+  draw_line(x=c(0.15,0.19),y=c(0.6,0.75),size=1,lineend = "round",linetype=2)+
+  draw_image(here('data','icons','dover1.png'),hjust=.15,vjust=-.35,scale=0.08)+
+  draw_image(here('data','icons','sablefish.png'),hjust=.15,vjust=-.12,scale=0.14)+
+  draw_image(here('data','icons','shortspine.png'),hjust=.15,vjust=-.2,scale=0.12)+
+  draw_image(here('data','icons','longspinet.png'),hjust=.35,vjust=-.09,scale=0.1)
+
+depth_change_fig <- ggdraw()+
+  draw_plot(fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0,0.5,1.5,0.5),'cm')))+
+  # draw_line(x=c(0.22,0.35),y=c(0.89,0.9),size=1)+
+  # draw_line(x=c(0.21,0.3),y=c(0.85,0.7),size=1)+
+  # draw_line(x=c(0.245,0.3),y=c(0.82,0.77),size=1)+
+  # draw_line(x=c(0.1,0.15),y=c(0.65,0.8),size=1)+
+  draw_image(here('data','icons','dover1.png'),hjust=.35,vjust=-.34,scale=0.08)+
+  draw_image(here('data','icons','sablefish.png'),hjust=.35,vjust=0,scale=0.14)+
+  draw_image(here('data','icons','shortspine.png'),hjust=.35,vjust=-.09,scale=0.12)+
+  draw_image(here('data','icons','longspinet.png'),hjust=.35,vjust=-.2,scale=0.1)
+
 leg <- get_legend(fourspp_depth_plot)
-fig_dist_depth_change<-plot_grid(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,0.1,0.5),'cm'))+guides(color='none',fill='none'),
-                                 fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0,0.5,1.5,0.5),'cm')),
+
+
+fig_dist_depth_change<-plot_grid(dist_to_shore_fig, depth_change_fig,
                                  nrow=2,labels='auto')
+
 fig_dist_depth_change<-ggdraw()+
   draw_plot(fig_dist_depth_change)+
   draw_plot(leg,y=-0.45)
 
 ggsave(here('model output','dts paper','fig_dist_depth_change.png'),fig_dist_depth_change,w=8,h=7.5)
+```
+### Alternate
+
+```{r}
+four_spp_dist_to_shore_change <- fourspp_reldist_change %>% 
+  group_by(spp_plotting,lat,esm) %>% 
+  slice_sample(n=25) %>% 
+  ggplot(aes(x=lat,y=change,fill=ESM,col=ESM))+
+  # geom_point(color='gray80',alpha=0.2,size=0.7)+
+  geom_point(size=0.5,alpha=0.2,position = position_jitter())+
+  geom_hline(yintercept=0,linetype=2)+
+  geom_smooth(data=fourspp_reldist_change,
+             aes(x=lat,y=change,fill=ESM,col=ESM),se=F)+
+  # geom_point(data=fp_lat,aes(x=lat,y=-20),color='black',size=2)+
+  scale_y_continuous(limits=c(-20,20))+
+  facet_wrap(~spp_plotting,nrow=1)+
+  scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  scale_fill_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  coord_flip()+
+  # theme(legend.position = c(0.8,0.7))+
+  labs(y="Change in Distance from Shore (km)",x="Latitude",col="ESM",fill="ESM")+
+  theme(panel.background = element_rect(fill=NA,color='black'),
+        strip.text=element_text(size=12))
+four_spp_dist_to_shore_change
+```
+Depth change
+
+```{r}
+fourspp_depth <- purrr::map(four_spp_list,calc_depth_frac,start_year=2020,end_year=2100) %>% bind_rows(.id='species')
+
+fourspp_depth_plot <- fourspp_depth %>% 
+    mutate(spp_plotting=case_when(
+      species=='dover' ~ "Dover Sole",
+      species=="ls" ~ "Longspine",
+      species=="ss"~"Shortspine",
+      species=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine"))) %>% 
+  mutate(ESM=toupper(esm)) %>% 
+  group_by(species,year,esm) %>% 
+  slice_sample(n=25) %>% 
+  ungroup() %>% 
+  ggplot(aes(x=year,y=frac,col=ESM,fill=ESM))+
+  geom_point(size=0.5,alpha=0.2,position = position_jitter())+
+  geom_smooth(se=F)+
+  scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  scale_fill_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  facet_wrap(~spp_plotting,nrow=1)+
+  # scale_color_manual(values=c("#2271B2","#d55e00"))+
+  labs(x="Year",y="Proportion < 700 fathoms",title="",fill="ESM",col="ESM")+
+  theme(axis.text.x = element_text(angle=30,vjust=1,hjust=1),
+        panel.background = element_rect(fill=NA,color='black'),
+        strip.text=element_blank(),
+        legend.position="bottom")
+fourspp_depth_plot
+```
+```{r}
+
+dist_to_shore_fig <- ggdraw()+
+  draw_plot(four_spp_dist_to_shore_change+theme(plot.margin=unit(c(0.5,0.5,0.1,0.5),'cm'))+guides(color='none',fill='none'))
+
+depth_change_fig <- ggdraw()+
+  draw_plot(fourspp_depth_plot + guides(color='none',fill='none') + theme(plot.margin=unit(c(0,0.5,1.5,0.5),'cm')))+
+  draw_image(here('data','icons','dover_sil.png'),hjust=.36,vjust=0.15,scale=0.10)+
+  draw_image(here('data','icons','sablefish_sil.png'),hjust=.11,vjust=0.15,scale=0.14)+
+  draw_image(here('data','icons','shortspine_sil.png'),hjust=-.1,vjust=0.15,scale=0.15)+
+  draw_image(here('data','icons','longspine_sil.png'),hjust=-.32,vjust=0.15,scale=0.12)
+
+leg <- get_legend(fourspp_depth_plot)
+
+
+fig_dist_depth_change<-plot_grid(dist_to_shore_fig, depth_change_fig,
+                                 nrow=2,labels='auto')
+
+fig_dist_depth_change<-ggdraw()+
+  draw_plot(fig_dist_depth_change)+
+  draw_plot(leg,y=-0.45)
+
+ggsave(here('model output','dts paper','fig_dist_depth_change2.png'),fig_dist_depth_change,w=8,h=7.5)
 ```
 
 ## Figure 3
@@ -636,11 +764,15 @@ Environmental state space within fishing footprints
 
 ```{r}
 roms_env_space <- roms %>% 
-  dplyr::select(year,lat,lon,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
-  distinct() %>% 
+  dplyr::select(year,lat,lon,mean_bt_30d_hadl,mean_oxy_bottom_30d_hadl,
+                mean_bt_30d_gfdl,mean_oxy_bottom_30d_gfdl,
+                mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl) %>% 
+  mutate(oxy_ens=(mean_oxy_bottom_30d_ipsl+mean_oxy_bottom_30d_gfdl+mean_oxy_bottom_30d_hadl)/3,
+         t_ens=(mean_bt_30d_ipsl+mean_bt_30d_gfdl+mean_bt_30d_hadl)/3) %>% 
+  distinct() %>%
   left_join(roms_ll,by=c('lon','lat')) %>% 
   drop_na() %>% 
-  rename(t=mean_bt_30d_ipsl,oxy=mean_oxy_bottom_30d_ipsl) %>% 
+  rename(t=t_ens,oxy=oxy_ens) %>% 
   mutate(depth_bin=cut(depth_m,breaks=c(0,-100,-250,-500,-1000,-3000),
                        labels=c("1000-3000m","500-1000m","250-500m","100-250m","0-100m")),
          lat_bin=cut(lat,breaks=c(30,33,36,39,42,45,48),labels=c("30-33","33-36","36-39","39-42","42-45","45-48")))
@@ -670,21 +802,31 @@ footprint_env_space <- roms_env_space_sf %>%
   summarise(mean_t_hist=mean(t_hist),mean_oxy_hist=mean(oxy_hist),
             mean_t_fut=mean(t_fut),mean_oxy_fut=mean(oxy_fut)) %>% 
   ungroup()
+
+# mean across the entire ROMS domain
+roms_env_change_mean <- roms_env_space_sf %>% 
+  st_set_geometry(NULL) %>% 
+  distinct() %>% 
+  summarise(mean_t_hist=mean(t_hist),mean_oxy_hist=mean(oxy_hist),
+            mean_t_fut=mean(t_fut),mean_oxy_fut=mean(oxy_fut)) %>% 
+  mutate(port_name="Coastwide")
+footprint_env_space <- footprint_env_space %>% bind_rows(roms_env_change_mean) %>% 
+  mutate(port_name=factor(port_name,levels=c("Coastwide","Astoria","Coos Bay","Brookings","Crescent City","Eureka","Fort Bragg","Morro Bay")))
 ```
 
 Make environmental affinities ellipses
 
 ```{r}
-library(ggnewscale)
-aff_polys<-affinities_ellipses(four_spp,yr_vec=1985:2010,concavity=5,threshold=0.25,lt=50)
+aff_polys<-affinities_ellipses_ens(four_spp,yr_vec=1985:2010,concavity=5,threshold=0.25,lt=50)
 # plotting order for colors
 polys_and_footprints <- ggplot()+
-  geom_polygon(data=aff_polys,aes(V1,V2,col=spp_plotting),fill=NA,size=1,linetype=3)+
+  geom_polygon(data=aff_polys,aes(V1,V2,col=spp_plotting,linetype=spp_plotting),fill=NA,size=1)+
+  scale_linetype_manual(values=c(1:4),guide='none')+
   scale_color_manual(values=c(pal4),name="Top 75% of\nspecies' CPUE")+
   new_scale_color()+
   geom_segment(data=footprint_env_space,aes(x=mean_t_hist,y=mean_oxy_hist,xend=mean_t_fut,yend=mean_oxy_fut,
              col=port_name),size=1,linetype=1,arrow=ggplot2::arrow(type="open",length=unit(0.1,'inches')))+
-  scale_color_npg(name="Port Group\nClimate")+
+  scale_color_manual(name="Port Group\nClimate",values=c('gray50',pal_npg()(7)))+
   labs(x="Bottom Temperature (deg C)",y="Bottom Oxygen (mmol/m3)")+
   theme(panel.grid.major = element_blank(),
         panel.grid.minor=element_blank(),
@@ -696,31 +838,46 @@ polys_and_footprints <- ggplot()+
 # with fish icons
 polys_and_footprints_fig <- ggdraw()+
   draw_plot(polys_and_footprints)+
-  draw_image(here('data','icons','dover1.png'),hjust=0.03,vjust=-.4,scale=0.13)+
-  draw_image(here('data','icons','sablefish.png'),hjust=.08,vjust=-.2,scale=0.17)+
-  draw_image(here('data','icons','shortspine.png'),hjust=.14,vjust=-.03,scale=0.15)+
-  draw_image(here('data','icons','longspinet.png'),hjust=.23,vjust=.08,scale=0.13)
+  draw_image(here('data','icons','dover_sil.png'),hjust=0.05,vjust=-.4,scale=0.12)+
+  draw_image(here('data','icons','sablefish_sil.png'),hjust=.10,vjust=-.17,scale=0.15)+
+  draw_image(here('data','icons','shortspine_sil.png'),hjust=.14,vjust=-.03,scale=0.15)+
+  draw_image(here('data','icons','longspine_sil.png'),hjust=.23,vjust=.08,scale=0.13)
 polys_and_footprints_fig  
 ```
 
 
 ```{r}
+# footprint_db_temp_plot <- footprint_env_space %>% 
+#   ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=fct_rev(port_name),col=port_name))+
+#   geom_segment(col=,size=1,linetype=1,arrow=ggplot2::arrow(type="open",length=unit(0.1,'inches')))+
+#   geom_segment(color="#FCAE91",colour_x =NA,colour_xend = "#A50F15",
+#                 size=1,size_x=3,size_xend = 3) +
+#   labs(x="Temperature",y="")+
+#   scale_y_discrete(position='right')+
+#   theme(panel.border = element_rect(color='black',fill=NA),
+#         axis.text.y=element_text(color=c(rev(pal_npg()(7)),'gray50')))
 footprint_db_temp_plot <- footprint_env_space %>% 
-  ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=fct_rev(port_name)))+
-  geom_dumbbell(color="#FCAE91",colour_x =NA,colour_xend = "#A50F15",
-                size=1,size_x=3,size_xend = 3) +
+  ggplot(aes(x=mean_t_hist,xend=mean_t_fut,y=fct_rev(port_name),yend=fct_rev(port_name),col=port_name))+
+  geom_segment(col="#A50F15",size=1,linetype=1,arrow=ggplot2::arrow(type="closed",length=unit(0.1,'inches')))+
   labs(x="Temperature",y="")+
   scale_y_discrete(position='right')+
   theme(panel.border = element_rect(color='black',fill=NA),
-        axis.text.y=element_text(color=rev(pal_npg()(6))))
+        axis.text.y=element_text(color=c(rev(pal_npg()(7)),'gray50')))
 # footprint_db_temp_plot
 
+# footprint_db_oxy_plot <- footprint_env_space %>% 
+#   ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=fct_rev(port_name)))+
+#   geom_dumbbell(color="#a3c4dc",colour_x =NA,colour_xend = "#0e668b",
+#                 size=1,size_x=3,size_xend = 3) +
+#   labs(x="Oxygen",y="")+
+#   theme(axis.text.y = element_blank(),panel.border = element_rect(color='black',fill=NA))
+
 footprint_db_oxy_plot <- footprint_env_space %>% 
-  ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=fct_rev(port_name)))+
-  geom_dumbbell(color="#a3c4dc",colour_x =NA,colour_xend = "#0e668b",
-                size=1,size_x=3,size_xend = 3) +
+  ggplot(aes(x=mean_oxy_hist,xend=mean_oxy_fut,y=fct_rev(port_name),yend=fct_rev(port_name),col=port_name))+
+  geom_segment(col="#0e668b",size=1,linetype=1,arrow=ggplot2::arrow(type="closed",length=unit(0.1,'inches')))+
   labs(x="Oxygen",y="")+
   theme(axis.text.y = element_blank(),panel.border = element_rect(color='black',fill=NA))
+
 # footprint_db_oxy_plot
 footprint_env_change_map <- plot_grid(footprints_map,NULL,footprint_db_oxy_plot,footprint_db_temp_plot,ncol=4,rel_widths = c(0.6,-0.1,0.45,0.6),labels=c('a','','b','c'),hjust=c(-0.5,0,-0.5,0.4))
 footprint_env_change_map
@@ -756,7 +913,7 @@ fig3 <- plot_grid(footprint_env_change_map,polys_and_footprints_fig,labels=c("",
                   hjust = 0,vjust=1,
                   rel_heights = c(0.5,0.5))
 fig3
-ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,h=8,w=8)
+ggsave(here('model output','dts paper','fig_env_change_env_affs.png'),fig3,height=9,width=8,units='in')
 ```
 
 ## Figure 4
@@ -846,14 +1003,30 @@ dover_sable_dens_change <- dover_dens_fp %>%
 
 
 ```{r}
+## Facetted by ESM
+# dover_sable_reldens <- allspp_reldens %>% 
+#   filter(spp %in% c('dover','sable'),
+#          port_name%in%c('Astoria','Fort Bragg')) %>% 
+#   ggplot(aes(delta_perc,fill=spp_plotting))+
+#   geom_density()+
+#   geom_vline(xintercept=0,linetype=2)+
+#   scale_fill_manual(values=pal4)+
+#   facet_grid(ESM~port_name)+
+#   labs(x=expression(paste(Delta,"CPUE")),y="Kernel Density",fill="")+
+#   theme(legend.position = 'bottom',
+#         strip.text = element_text(size=10),
+#         panel.background = element_rect(color='black'))
+
+# Facetted by species
 dover_sable_reldens <- allspp_reldens %>% 
   filter(spp %in% c('dover','sable'),
          port_name%in%c('Astoria','Fort Bragg')) %>% 
-  ggplot(aes(delta_perc,fill=spp_plotting))+
-  geom_density()+
+  ggplot(aes(delta_perc,fill=ESM))+
+  geom_density(alpha=0.5)+
   geom_vline(xintercept=0,linetype=2)+
-  scale_fill_manual(values=pal4)+
-  facet_grid(ESM~port_name)+
+  # scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  scale_fill_manual(values=c("#009175","#7E0018","#00C2F9"))+
+  facet_grid(spp_plotting~port_name)+
   labs(x=expression(paste(Delta,"CPUE")),y="Kernel Density",fill="")+
   theme(legend.position = 'bottom',
         strip.text = element_text(size=10),
@@ -865,53 +1038,54 @@ dover_sable_reldens
 Trying overlap metrics
 
 ```{r}
-dover_sable_overlap_change <- purrr::map_df(c('gfdl','hadl','ipsl'),
-                                            lic_D_fps,
-                                            sims_df1=dover_ens_separate,
-                                            sims_df2=sable_ens_separate,fp=footprints) %>% 
-  filter(year>2074)
-
-dover_sable_overlap_fp <- dover_sable_overlap_change %>% 
-  mutate(ESM=toupper(esm)) %>% 
-  group_by(port_name,ESM) %>% 
-  summarise(mean_change=mean(deltaD),upper=mean(deltaD)+sd(deltaD),lower=mean(deltaD)-sd(deltaD)) %>% 
-  filter(port_name%in%c("Astoria","Fort Bragg")) %>% 
-  ggplot(aes(port_name,mean_change,ymin=lower,ymax=upper))+
-  geom_pointrange()+
-  geom_hline(yintercept=0,linetype=2)+
-  facet_wrap(~ESM,nrow=3)+
-  labs(x="Port Group",y=expression(paste(Delta,"D")))
-  # xlim(c(-0.03,0.03))+
-  # scale_color_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))
-  # facet_wrap(~port_name)
-dover_sable_overlap_fp
+# dover_sable_overlap_change <- purrr::map_df(c('gfdl','hadl','ipsl'),
+#                                             lic_D_fps,
+#                                             sims_df1=dover_ens_separate,
+#                                             sims_df2=sable_ens_separate,fp=footprints) %>% 
+#   filter(year>2074)
+# 
+# dover_sable_overlap_fp <- dover_sable_overlap_change %>% 
+#   mutate(ESM=toupper(esm)) %>% 
+#   group_by(port_name,ESM) %>% 
+#   summarise(mean_change=mean(deltaL),upper=mean(deltaL)+sd(deltaL),lower=mean(deltaL)-sd(deltaL)) %>% 
+#   filter(port_name%in%c("Astoria","Fort Bragg")) %>% 
+#   ggplot(aes(port_name,mean_change,col=ESM,ymin=lower,ymax=upper))+
+#   geom_pointrange(position=position_jitter())+
+#   geom_hline(yintercept=0,linetype=2)+
+#   scale_color_manual(values=c("#009175","#7E0018","#00C2F9"))+
+#   # facet_wrap(~port_name,ncol=2)+
+#   labs(x="Port Group",y=expression(paste(Delta,"L")))
+#   # xlim(c(-0.03,0.03))+
+#   # scale_color_manual(values=viridis_pal(option="D",begin=0.2,end=0.8)(3))
+#   # facet_wrap(~port_name)
+# dover_sable_overlap_fp
 ```
 
 ```{r}
 # dover_sable_bwo <- bwo_sims(dover_ens_separate,sable_ens_separate)
-# dover_sable_bwo_hist <- dover_sable_bwo %>% 
-#   filter(year %in% c(1985:2010)) %>% 
-#   group_by(port_name,esm,sim) %>% 
-#   summarise(bwo_hist=mean(bwo)) %>% 
+# dover_sable_bwo_hist <- dover_sable_bwo %>%
+#   filter(year %in% c(1985:2010)) %>%
+#   group_by(port_name,esm,sim) %>%
+#   summarise(bwo_hist=mean(bwo)) %>%
 #   ungroup()
-# dover_sable_bwo_fut <- dover_sable_bwo %>% 
-#   filter(year %in% c(2075:2100)) %>% 
-#   group_by(port_name,esm,sim) %>% 
-#   summarise(bwo_fut=mean(bwo)) %>% 
+# dover_sable_bwo_fut <- dover_sable_bwo %>%
+#   filter(year %in% c(2075:2100)) %>%
+#   group_by(port_name,esm,sim) %>%
+#   summarise(bwo_fut=mean(bwo)) %>%
 #   ungroup()
-# dover_sable_bwo_diff <- dover_sable_bwo_hist %>% 
-#   left_join(dover_sable_bwo_fut) %>% 
-#   mutate(bwod=bwo_fut-bwo_hist) %>% 
-#   group_by(port_name,esm) %>% 
+# dover_sable_bwo_diff <- dover_sable_bwo_hist %>%
+#   left_join(dover_sable_bwo_fut) %>%
+#   mutate(bwod=bwo_fut-bwo_hist) %>%
+#   group_by(port_name,esm) %>%
 #   summarise(meandiff=mean(bwod),
-#             sddiff=sd(bwod)) %>% 
-#   mutate(lower=meandiff-sddiff,upper=meandiff+sddiff) %>% 
+#             sddiff=sd(bwod)) %>%
+#   mutate(lower=meandiff-sddiff,upper=meandiff+sddiff) %>%
 #   ungroup()
-#   
-# 
-# dover_sable_bwo_plot <- dover_sable_bwo_diff %>% 
-#   mutate(ESM=toupper(esm)) %>% 
-#   filter(port_name%in%c("Astoria","Fort Bragg")) %>% 
+
+
+# dover_sable_bwo_plot <- dover_sable_bwo_diff %>%
+#   mutate(ESM=toupper(esm)) %>%
+#   filter(port_name%in%c("Astoria","Fort Bragg")) %>%
 #   ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
 #   geom_pointrange()+
 #   geom_hline(yintercept=0,linetype=2)+
@@ -941,58 +1115,69 @@ dover_sable_bhat_diff <- dover_sable_bhat_hist %>%
   mutate(lower=meandiff-sddiff,upper=meandiff+sddiff) %>%
   ungroup()
 
+# dover_sable_bhat_plot <- dover_sable_bhat_diff %>%
+#   mutate(ESM=toupper(esm)) %>%
+#   filter(port_name%in%c("Astoria","Fort Bragg")) %>%
+#   ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
+#   geom_pointrange()+
+#   geom_hline(yintercept=0,linetype=2)+
+#   facet_wrap(~ESM,nrow=3)+
+#   labs(x="Port Group",y=expression(paste(Delta,"Overlap")))+
+#   theme(panel.background = element_rect(color='black'),
+#         strip.text = element_text(size=10))
 dover_sable_bhat_plot <- dover_sable_bhat_diff %>%
   mutate(ESM=toupper(esm)) %>%
   filter(port_name%in%c("Astoria","Fort Bragg")) %>%
-  ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
-  geom_pointrange()+
+  ggplot(aes(port_name,meandiff,col=ESM,ymin=lower,ymax=upper))+
+  geom_pointrange(position=position_dodge(width=0.2))+
   geom_hline(yintercept=0,linetype=2)+
-  facet_wrap(~ESM,nrow=3)+
-  labs(x="Port Group",y=expression(paste(Delta,"Overlap")))+
+  scale_color_manual(values=c("#009175","#7E0018","#00C2F9"),guide='none')+
+  labs(x="Port Group",y=expression(paste(Delta,"Spatial Overlap")))+
   theme(panel.background = element_rect(color='black'),
         strip.text = element_text(size=10))
 dover_sable_bhat_plot
 ```
-```{r}
-dover_sable_aa <- aa_sims(dover_ens_separate,sable_ens_separate)
-dover_sable_aa_hist <- dover_sable_aa %>%
-  filter(year %in% c(1985:2010)) %>%
-  group_by(port_name,esm,sim) %>%
-  summarise(aa_hist=mean(aa)) %>%
-  ungroup()
-dover_sable_aa_fut <- dover_sable_aa %>%
-  filter(year %in% c(2075:2100)) %>%
-  group_by(port_name,esm,sim) %>%
-  summarise(aa_fut=mean(aa)) %>%
-  ungroup()
-dover_sable_aa_diff <- dover_sable_aa_hist %>%
-  left_join(dover_sable_aa_fut) %>%
-  mutate(aad=aa_fut-aa_hist) %>%
-  group_by(port_name,esm) %>%
-  summarise(meandiff=mean(aad),
-            sddiff=sd(aad)) %>%
-  mutate(lower=meandiff-sddiff,upper=meandiff+sddiff) %>%
-  ungroup()
 
-dover_sable_aa_plot <- dover_sable_aa_diff %>%
-  mutate(ESM=toupper(esm)) %>%
-  filter(port_name%in%c("Astoria","Fort Bragg")) %>%
-  ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
-  geom_pointrange()+
-  geom_hline(yintercept=0,linetype=2)+
-  facet_wrap(~ESM,nrow=3)+
-  labs(x="Port Group",y=expression(paste(Delta,"Overlap")))+
-  theme(panel.background = element_rect(color='black'),
-        strip.text = element_text(size=10))
-dover_sable_aa_plot
+
+```{r}
+# dover_sable_aa <- aa_sims(dover_ens_separate,sable_ens_separate)
+# dover_sable_aa_hist <- dover_sable_aa %>%
+#   filter(year %in% c(1985:2010)) %>%
+#   group_by(port_name,esm,sim) %>%
+#   summarise(aa_hist=mean(aa)) %>%
+#   ungroup()
+# dover_sable_aa_fut <- dover_sable_aa %>%
+#   filter(year %in% c(2075:2100)) %>%
+#   group_by(port_name,esm,sim) %>%
+#   summarise(aa_fut=mean(aa)) %>%
+#   ungroup()
+# dover_sable_aa_diff <- dover_sable_aa_hist %>%
+#   left_join(dover_sable_aa_fut) %>%
+#   mutate(aad=aa_fut-aa_hist) %>%
+#   group_by(port_name,esm) %>%
+#   summarise(meandiff=mean(aad),
+#             sddiff=sd(aad)) %>%
+#   mutate(lower=meandiff-sddiff,upper=meandiff+sddiff) %>%
+#   ungroup()
+# 
+# dover_sable_aa_plot <- dover_sable_aa_diff %>%
+#   mutate(ESM=toupper(esm)) %>%
+#   filter(port_name%in%c("Astoria","Fort Bragg")) %>%
+#   ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
+#   geom_pointrange()+
+#   geom_hline(yintercept=0,linetype=2)+
+#   facet_wrap(~ESM,nrow=3)+
+#   labs(x="Port Group",y=expression(paste(Delta,"Overlap")))+
+#   theme(panel.background = element_rect(color='black'),
+#         strip.text = element_text(size=10))
+# dover_sable_aa_plot
 ```
 
 ```{r}
-dover_sable_cpue_overlap <- plot_grid(dover_sable_reldens,dover_sable_bhat_plot,ncol=2,rel_widths = c(1,0.7),labels='auto')
+dover_sable_cpue_overlap <- plot_grid(dover_sable_reldens,dover_sable_bhat_plot,nrow=2,rel_heights=c(1,0.7),labels='auto')
 dover_sable_cpue_overlap
-ggsave(here('model output','dts paper','fig_cpue_bhat_fp.png'),dover_sable_cpue_overlap,h=6,w=8)
+ggsave(here('model output','dts paper','fig_cpue_bhat_fp.png'),dover_sable_cpue_overlap,h=8,w=6)
 ```
-
 
 
 # Supplementary Figures
@@ -1103,11 +1288,51 @@ fig_hadl_gfdl_ipsl_change
 ggsave(here::here('model output','dts paper','ESMs_env_change.png'),fig_hadl_gfdl_ipsl_change,h=7,w=10)
 ```
 
+## Bhattacharyya's and CPUE Change
 
+For all footprints
 
-# Deprecated/Old
+```{r,fig.width=8,fig.height=6}
+dover_sable_reldens_all <- allspp_reldens %>% 
+  filter(spp %in% c('dover','sable')) %>% 
+  ggplot(aes(delta_perc,fill=spp_plotting))+
+  geom_density()+
+  geom_vline(xintercept=0,linetype=2)+
+  scale_fill_manual(values=pal4)+
+  facet_grid(ESM~port_name)+
+  labs(x=expression(paste(Delta,"CPUE")),y="Kernel Density",fill="")+
+  theme(legend.position = 'bottom',
+        strip.text = element_text(size=10),
+        panel.background = element_rect(color='black'))
 
-## Old Fig 1
+dover_sable_reldens_all
+```
+
+```{r}
+dover_sable_bhat_plot_all_fps <- dover_sable_bhat_diff %>%
+  mutate(ESM=toupper(esm)) %>%
+  # filter(port_name%in%c("Astoria","Fort Bragg")) %>%
+  ggplot(aes(port_name,meandiff,ymin=lower,ymax=upper))+
+  geom_pointrange()+
+  geom_hline(yintercept=0,linetype=2)+
+  facet_wrap(~ESM,nrow=3)+
+  labs(x="Port Group",y=expression(paste(Delta,"Overlap")))+
+  theme(panel.background = element_rect(color='black'),
+        strip.text = element_text(size=10))
+dover_sable_bhat_plot_all_fps
+```
+## Importance of DTS
+From PacFIN data extracted and organized by Sean Matson, 12/2022
+
+```{r}
+dts_landings <- read_csv(here('data','pacfin_dts_landings_matson.csv'))
+dts_prop_landings_plot <- dts_landings %>% 
+  ggplot(aes(PACFIN_YEAR,proportion))+
+  geom_line()+
+  labs(x="Year",y="DTS Proportion of All Trawl Groundfish")
+dts_prop_landings_plot
+ggsave(here('model output','dts paper','fig_dts_landings_prop.png'),dts_prop_landings_plot,h=5,w=6)
+```
 
 ```{r}
 landings_plot <- v %>% 
@@ -1153,12 +1378,15 @@ lbs_plot <- v %>%
   # scale_x_continuous(breaks=seq(2010,2020,by=2))+
   scale_color_manual(values=pal)+
   scale_x_continuous(expand=c(0,2))+
-  theme(legend.position = c(0.15,0.8),
+  theme(legend.position = c(0.85,0.8),
         axis.text = element_text(size=10),
         axis.title = element_text(size=12),
         panel.border = element_rect(color='black',fill=NA))
 lbs_plot
+
+ggsave(here('model output','dts paper','fig_dts_landings_lbs.png'),lbs_plot,h=4,w=6.5)
 ```
+# Deprecated/Old
 
 Overlap map (count number of species in each cell). This figure shows the number of species out of four in each grid cell that are at or above their median CPUE (across all cells) for that year.
 

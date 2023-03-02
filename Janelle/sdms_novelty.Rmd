@@ -7,6 +7,7 @@ output: html_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(here)
+library(cowplot)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -17,8 +18,9 @@ options(dplyr.summarise.inform=FALSE)
 plot_theme <-   theme_minimal()+
   theme(text=element_text(family="sans",size=12,color="black"),
         legend.text = element_text(size=10),
+        legend.title = element_text(size=10),
         axis.title=element_text(family="sans",size=14,color="black"),
-        axis.text=element_text(family="sans",size=12,color="black"),
+        axis.text=element_text(family="sans",size=10,color="black"),
         panel.grid.major = element_line(color="gray50",linetype=3))
 theme_set(plot_theme)
 ```
@@ -96,7 +98,8 @@ summarise_sdm_novelty <- function(sdm_novelty_df){
               novel_cells=sum(is_novel),
               total_cells=n()) %>% 
     mutate(prop_novel_biomass=biomass_novel/total_biomass,
-           prop_novel_cells=novel_cells/total_cells)
+           prop_novel_cells=novel_cells/total_cells) %>% 
+    ungroup()
   
   sdm_novelty_summ
 }
@@ -106,10 +109,35 @@ summarise_sdm_novelty <- function(sdm_novelty_df){
 dogfish_novelty_summ <- summarise_sdm_novelty(dogfish_novelty)
 ```
 
+# Apply
+
+Apply to all selected, projected species' models
+
+```{r}
+fps <- list.files(here('Janelle','selected models'),recursive = T,full.names = T) %>% 
+  str_subset("projection_3ESMs.rds")
+head(fps)
+# make sure this is in the right order
+spp_names <- c("big skate","longnose skate","pacific spiny dogfish","spotted ratfish","arrowtooth flounder","curlfin sole","dover sole","english sole","pacific sanddab","petrale sole","rex sole","slender sole","lingcod","longspine thornyhead","pacific grendadier","sablefish","shortspine thornyhead","aurora rockfish","bocaccio","canary rockfish","chilipepper","darkblotched rockfish","greenstriped rockfish","pacific ocean perch","sharpchin rockfish","shortbelly rockfish","shortraker rockfish","splitnose rockfish","stripetail rockfish","widow rockfish","yelloweye rockfish","yellowtail rockfish")
+
+# do the calculations
+sdm_novelty <- purrr::map2_df(spp_names,fps,function(x,y){
+  df <- read_rds(y)
+  out <- join_novelty_sdm(novelty_df = novelty,sdm_df=df) %>% 
+    summarise_sdm_novelty() %>% 
+    mutate(species=x)
+  out
+})
+spp_cats <- tibble(species=spp_names,type=c(rep("elasmobranch",4),rep("flatfish",8),rep("other",5),rep("rockfish",15)))
+sdm_novelty <- sdm_novelty %>% 
+  ungroup() %>% 
+  left_join(spp_cats,by="species")
+```
+
 # Visualize
 
 ```{r}
-# total biomass in novel climates
+# example for dogfish- total biomass in novel climates
 dogfish_novelty_biomass_novel_ts <- dogfish_novelty_summ %>% 
   ggplot(aes(year,biomass_novel/1000,color=esm))+
   geom_line(size=1.5)+
@@ -126,5 +154,88 @@ dogfish_novelty_biomass_novel_ts
 dogfish_novelty_propnovel_ts
 ```
 
+Summary figures across species
+
+```{r,fig.width=8,fig.height=10}
+hov_prop_bio_elasmo <- sdm_novelty %>% 
+  filter(year>2020,type=="elasmobranch") %>% 
+  ggplot(aes(year,species,fill=prop_novel_biomass),col=NA)+
+  geom_tile()+
+  scale_fill_gradient(low="#440154FF",high="#FDE725FF",limits=c(0,1),guide="none")+
+  labs(fill="Proportion of\nBiomass",x="",title="")+
+  facet_wrap(~esm)+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle=45,hjust=0.5))+
+  theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
+hov_prop_bio_flatfish <- sdm_novelty %>% 
+  filter(year>2020,type=="flatfish") %>% 
+  ggplot(aes(year,species,fill=prop_novel_biomass),col=NA)+
+  geom_tile()+
+  scale_fill_gradient(low="#440154FF",high="#FDE725FF",limits=c(0,1),guide="none")+
+  labs(fill="Proportion of\nBiomass",x="",title="")+
+  facet_wrap(~esm)+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle=45,hjust=0.5))+
+  theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
+hov_prop_bio_other <- sdm_novelty %>% 
+  filter(year>2020,type=="other") %>% 
+  ggplot(aes(year,species,fill=prop_novel_biomass),col=NA)+
+  geom_tile()+
+  scale_fill_gradient(low="#440154FF",high="#FDE725FF",limits=c(0,1),guide="none")+
+  labs(fill="Proportion of\nBiomass",x="",title="")+
+  facet_wrap(~esm)+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle=45,hjust=0.5))+
+  theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
+hov_prop_bio_rockfish <- sdm_novelty %>% 
+  filter(year>2020,type=="rockfish") %>% 
+  ggplot(aes(year,species,fill=prop_novel_biomass),col=NA)+
+  geom_tile()+
+  scale_fill_gradient(low="#440154FF",high="#FDE725FF",limits=c(0,1))+
+  labs(fill="Proportion of\nBiomass",x="",title="")+
+  facet_wrap(~esm)+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle=45,hjust=0.5),
+        legend.position = 'bottom',
+        legend.key.width = unit(2,'cm'))+
+  theme(plot.margin = unit(c(0, 0.2, 0, 0), "cm"))
+hov_prop_bio <- plot_grid(hov_prop_bio_elasmo,NULL,hov_prop_bio_other,NULL,hov_prop_bio_flatfish,NULL,hov_prop_bio_rockfish,nrow=7,rel_heights = c(4,-1,5,-1,8,-1,14))
+hov_prop_bio
+```
+
+Mean rate of habitat "loss" by species
+
+```{r}
+calc_hab_loss <- function(df){
+  m <- lm(prop_novel_biomass~year,data=df)
+  coef(m)['year']
+}
+sdm_habloss <- sdm_novelty %>% 
+  ungroup() %>% 
+  group_by(species,type,esm) %>% 
+  nest() %>% 
+  mutate(yeareff=purrr::map_dbl(data,calc_hab_loss)) %>% 
+  mutate(perc_loss_yr=yeareff*100) %>% 
+  dplyr::select(species,type,esm,perc_loss_yr) %>% 
+  ungroup()
+```
+
+```{r,fig.width=8}
+habloss_plot <- sdm_habloss %>% 
+  mutate(spp_ordered=fct_reorder(species,perc_loss_yr)) %>% 
+  ggplot(aes(spp_ordered,perc_loss_yr,fill=type))+
+  geom_col()+
+  coord_flip()+
+  geom_hline(yintercept = 0,color='black')+
+  scale_fill_manual(values=pnw_palette("Bay",4))+
+  facet_wrap(~esm,nrow=1)+
+  labs(y=expression(paste(Delta,"Novel Biomass per Year (%)")),x="Species",fill="Group")+
+  theme(panel.border = element_rect(color='black',fill=NA))
+habloss_plot
+```
 
 

@@ -1,7 +1,6 @@
 ---
-title: "sdmTMB Custom Functions"
+title: "Custom functions for use in species distribution modeling"
 author: "Owen Liu"
-date: "6/8/2021"
 output: 
   html_document:
     toc: true
@@ -1444,6 +1443,64 @@ affinities_ellipses <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold
 }
 ```
 
+```{r}
+# for ensemble (not individual ESMs)
+
+make_spp_concave_hull_ens <- function(ens_preds,yr_vec=1980:2022,sppname,concavity=2,lt=0,threshold=0.05){
+  vartemp <- "t_ens"
+  varoxy <- "oxy_ens"
+  df <- ens_preds %>% 
+    filter(year %in% yr_vec) %>%
+    mutate(mean_est=exp(mean_est)) %>%
+    filter(mean_est>=quantile(mean_est,threshold)) %>% 
+    ungroup() %>% 
+    dplyr::select(all_of(c(vartemp,varoxy))) %>% 
+    as.matrix()
+    # st_as_sf(coords=c("mean_bt_30d_ipsl","mean_oxy_bottom_30d_ipsl"))
+  p <- df %>% 
+    concaveman(concavity = concavity,length_threshold = lt) %>% 
+    as_tibble() %>% 
+    mutate(spp=sppname)
+  p
+}
+
+affinities_ellipses_ens <- function(ens_preds,yr_vec=1980:2022,concavity=3,threshold=0.25,lt=0,return_what='df'){
+  df <- ens_preds %>% 
+    filter(year %in% yr_vec) %>%
+    mutate(mean_est=exp(mean_est)) %>%
+    dplyr::select(species,year,mean_est,mean_bt_30d_ipsl,mean_oxy_bottom_30d_ipsl,
+                  mean_bt_30d_hadl,mean_oxy_bottom_30d_hadl,
+                  mean_bt_30d_gfdl,mean_oxy_bottom_30d_gfdl) %>%
+    mutate(oxy_ens=(mean_oxy_bottom_30d_ipsl+mean_oxy_bottom_30d_gfdl+mean_oxy_bottom_30d_hadl)/3,
+         t_ens=(mean_bt_30d_ipsl+mean_bt_30d_gfdl+mean_bt_30d_hadl)/3) %>% 
+    dplyr::select(species,year,mean_est,oxy_ens,t_ens) %>% 
+    group_by(species) %>% 
+    nest(data=c(year,mean_est,oxy_ens,t_ens)) %>% 
+    mutate(p=map(data,make_spp_concave_hull_ens,sppname=species,concavity=concavity,threshold=threshold,lt=lt)) %>% 
+    ungroup()
+  
+  ps <- do.call(rbind,df$p) %>% 
+    mutate(spp_plotting=case_when(
+      spp=='dover' ~ "Dover Sole",
+      spp=="ls" ~ "Longspine",
+      spp=="ss"~"Shortspine",
+      spp=="sable" ~"Sablefish"
+    )) %>% 
+    mutate(spp_plotting=factor(spp_plotting,levels=c("Dover Sole","Sablefish","Shortspine","Longspine")))
+  
+  if(return_what=='plot'){
+    out <- ps %>%
+      ggplot(aes(V1,V2,col=spp_plotting))+
+      geom_polygon(fill=NA,size=1.5)+
+      scale_color_manual(values=pal4)+
+      # scale_fill_manual(values=pal4)+
+      labs(x="Bottom Temperature",y="Bottom Oxygen",col="Species")
+  } else{
+    out <- ps
+  }
+  out
+}
+```
 
 ## All Projection Plots
 
@@ -1656,7 +1713,7 @@ calc_footprint_dens_ts <- function(ens_preds,fp=footprints,what="plot"){
 calc_footprint_reldens_ts <- function(ens_preds,fp=footprints,what="plot"){
   d <- ens_preds %>% 
     filter(year>2019) %>% 
-    mutate(est=exp(ens_est)) %>%
+    mutate(est=exp(median_est)) %>%
     # mutate(est=exp(ens_est)) %>%
     st_as_sf(coords=c("longitude","latitude"),crs="+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
     st_join(footprints) %>% 
