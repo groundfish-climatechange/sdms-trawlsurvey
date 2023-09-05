@@ -20,8 +20,6 @@ library(lubridate)
 library(sf)
 library(here)
 library(rnaturalearth)
-# vista is Eric Ward's library for looking at outputs
-library(vista)
 library(cowplot)
 library(RANN)
 library(furrr)
@@ -287,7 +285,7 @@ Use the grid to define the prediction domain
 
 ```{r,eval=F}
 # ROMS extent
-roms_bbox <- read_rds(here::here('data','roms_latlon_key.rds')) %>% 
+roms_bbox <- read_rds(here::here('data','roms_latlon_depth_key_topleft_start.rds')) %>% 
   mutate(roms_cell=row_number()) %>% 
   st_as_sf(coords=c('lon','lat'),crs=4326) %>%
   st_bbox() %>% 

@@ -45,27 +45,30 @@ habdat <- raster(here('data','substrate','bef','wc_sub_hms_i_UTM.tif'))
 
 # ROMS depths, from Mike Jacox email June 11, 2021
 # CHANGED APRIL 2022, code will break from here
-roms_depths <- tidync(here('data','grids','bottom_layer_depth.nc')) %>% hyper_tibble() %>% 
-  mutate(depth_m=-bld)
+# roms_depths <- tidync(here('data','grids','bottom_layer_depth.nc')) %>% hyper_tibble() %>% 
+#   mutate(depth_m=-bld)
+# 
+# roms_ll_key <- roms_depths %>% arrange(desc(lat),lon) %>% 
+#   mutate(roms_cell=row_number()) %>% 
+#   dplyr::select(roms_cell,lon,lat,depth_m)
+# 
+# write_rds(roms_ll_key,here::here('data','roms_latlon_depth_key_topleft_start.rds'))
 
-roms_ll_key <- roms_depths %>% arrange(desc(lat),lon) %>% 
-  mutate(roms_cell=row_number()) %>% 
-  dplyr::select(roms_cell,lon,lat,depth_m)
-
-write_rds(roms_ll_key,here::here('data','roms_latlon_depth_key_topleft_start.rds'))
+# Aug 2023
+roms_ll <- read_rds(here::here('data','roms_latlon_depth_key_topleft_start.rds'))
 ```
 
 ```{r}
 res_roms <- 0.1
-roms_lat <- unique(roms_depths$lat)
-roms_lon <- unique(roms_depths$lon)
+roms_lat <- unique(roms_ll$lat)
+roms_lon <- unique(roms_ll$lon)
 # make the raster, with small adjustment because R usually interprets grid corners, not grid centers
 roms_grid <- raster(nrows=length(roms_lat),ncols=length(roms_lon),
                     xmn=min(roms_lon)-res_roms/2,xmx=max(roms_lon)+res_roms/2,
                     ymn=min(roms_lat)-res_roms/2,ymx=max(roms_lat)+res_roms/2,crs=4326,
                     # vals=roms_depths$depth_m)
                     # vals=roms_depths %>% arrange(lon,desc(lat)) %>% pull('depth_m'))
-                    vals=roms_depths %>% arrange(desc(lat),lon) %>% pull('depth_m'))
+                    vals=roms_ll %>% arrange(desc(lat),lon) %>% pull('depth_m'))
 
 # ROMS grid, converted to polygons
 # roms_grid <- raster(here::here('data','substrate','bottom_layer_depth.grd'))
@@ -107,7 +110,7 @@ Finally, summarize the crosstabulation to obtain the proportion of each habitat 
 
 ```{r}
 prop_hab_ROMS <- crosstab %>% 
-  rename(substrate=wc_sub_hms_i_UTM,
+  rename(substrate=Rowid,
          roms_cell=layer) %>% 
   group_by(roms_cell) %>% 
   mutate(totcells=sum(Freq)) %>% 

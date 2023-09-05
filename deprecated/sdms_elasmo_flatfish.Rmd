@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(cowplot) # for organizing multipanel plots
 library(visreg) # for visualizing conditional environmental relationships
 library(tictoc) # for timing
+library(vista) # for some output plotting
+
 ```
 
 # Introduction
@@ -114,8 +116,8 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
 }
 ```
 
-```{r}
-# m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
+```{r,eval=F}
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
 ```
 
 ## Diagnostic Plots
@@ -149,7 +151,7 @@ make_diagnostic_plots <- function(m){
 }
 ```
 
-```{r,fig.height=8,fig.width=8}
+```{r,fig.height=8,fig.width=8,eval=F}
 make_diagnostic_plots(m)
 ```
 
@@ -262,7 +264,7 @@ make_three_maps <- function(spp_preds){
 }
 ```
 
-```{r,fig.height=5,fig.width=8}
+```{r,fig.height=5,fig.width=8,eval=F}
  mp <- make_predictions(m)
  make_three_maps(mp)
 ```
@@ -304,7 +306,7 @@ make_two_diff_maps <- function(spp_preds){
 }
 ```
 
-```{r,fig.height=5,fig.width=5.3}
+```{r,fig.height=5,fig.width=5.3,eval=F}
  make_two_diff_maps(mp)
 ```
 
@@ -356,8 +358,8 @@ plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
 
 ```
 
-```{r}
- plot_single_env_relationship(fit = m)
+```{r,eval=F}
+plot_single_env_relationship(fit = m)
 ```
 
 Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as conditional responses of CPUE to the given variable, conditional on the other variables being held at their median values.
@@ -392,8 +394,8 @@ plot_all_env_relationships <- function(m){
 ```
 
 
-```{r,fig.height=8,fig.width=8}
- plot_all_env_relationships(m)
+```{r,fig.height=8,fig.width=8,eval=F}
+plot_all_env_relationships(m)
 ```
 
 ## Wrap Everything
@@ -408,7 +410,7 @@ Wrap all of the above to make a "push go" function for a species to:
 *   Save projected data
 
 ```{r}
-process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_substrate,dir.out=here::here('Janelle')){
+process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_substrate,dir.out=here::here('model output')){
   tic(paste(species,"processing total time"))
   tic(paste("Fitting model for",species))
   # run model
