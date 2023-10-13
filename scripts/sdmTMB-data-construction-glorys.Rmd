@@ -1,0 +1,341 @@
+---
+title: "Construct Data for GLORYS-based SDMs"
+output: html_document
+date: "2023-10-11"
+---
+
+```{r setup, include=FALSE}
+# remotes::install_github("pbs-assess/sdmTMB",ref="stacking")
+library(sdmTMB)
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(here)
+library(rnaturalearth)
+library(cowplot)
+library(RANN)
+library(tictoc)
+library(CopernicusMarine)
+library(tidync)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r plottheme}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=10,color="black"),
+        legend.text = element_text(size=14),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=8,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+```{r}
+# spatial background map
+# load west cost land for mapping
+coast <- ne_states(country='United States of America',returnclass = 'sf') %>% 
+  filter(name %in% c('California','Oregon','Washington','Nevada')) %>%
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km")
+
+```
+
+# Purpose
+
+Prepare species and environmental covariate data for use in `sdmTMB` model fitting and for species distribution projections. In this iteration of the analysis, we use GLORYS data from Mercator Ocean. We will download, clean, and organize the GLORYS data, and then attach it to the NWFSC bottom trawl survey data.
+
+# Build GLORYS data
+
+In this section, we download and clean the GLORYS data.
+
+## Download GLORYS
+
+This obviously takes a while to download, so don't run it every time
+
+```{r, eval=F}
+# Script to download GLORYS data directly from Copernicus Servers
+# Requires a Copernicus marine service account
+# to browse around datasets, you can use copernicus_products_list()
+
+#Set directories
+home_dir = here()
+out_dir = here("data","GLORYS")
+
+#Specify lat/lon/depth bounds
+REGION = c(-138,26,-114,51)
+VERT_RANGE =  c(0, 5000) 
+```
+
+Download temperature
+
+```{r, eval=F}
+copernicus_product_details(product       = "GLOBAL_MULTIYEAR_PHY_001_030",
+                           layer         = "cmems_mod_glo_phy_my_0.083_P1M-m",
+                           variable = "thetao")
+
+copernicus_download_motu(
+  username = "oliu",
+  password = "@Peng4ott2Eagles17",
+  destination   = paste0(out_dir,'/GLORYS-Monthly-2003-2020_thetao.nc'),
+  product       = "GLOBAL_MULTIYEAR_PHY_001_030",
+  layer         = "cmems_mod_glo_phy_my_0.083_P1M-m",
+  variable      = "sea_water_velocity",
+  output        = "netcdf",
+  region        = REGION,
+  timerange     = c("2003-01-01", "2020-12-16"),
+  sub_variables = 'thetao',
+  verticalrange = VERT_RANGE,
+  overwrite=TRUE
+)
+```
+
+Download oxygen
+
+```{r oxygen,eval=F}
+copernicus_product_details(product       = "GLOBAL_MULTIYEAR_BGC_001_029",
+                           layer         = "cmems_mod_glo_bgc_my_0.25_P1M-m",
+                           variable = "o2")
+
+copernicus_download_motu(
+  username = "oliu",
+  password = "@Peng4ott2Eagles17",
+  destination   = paste0(out_dir,'/GLORYS-Monthly-2003-2020_o2.nc'),
+  product       = "GLOBAL_MULTIYEAR_BGC_001_029",
+  layer         = "cmems_mod_glo_bgc_my_0.25_P1M-m",
+  variable      = "o2",
+  output        = "netcdf",
+  region        = REGION,
+  timerange     = c("2003-01-01", "2020-12-16"),
+  sub_variables = 'o2',
+  verticalrange = VERT_RANGE,
+  overwrite=TRUE
+)
+```
+## Find Bottom Depth
+
+Find the bottom depths of each GLORYS cell to facilitate matching to trawl data
+
+```{r}
+# take the first year of each model
+glorys_phy_bot <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc')) %>% 
+  hyper_filter(time=index==1) %>% 
+  hyper_tibble() %>% 
+  group_by(longitude,latitude) %>% 
+  summarise(bot=last(depth)) %>% 
+  ungroup()
+
+# visualize
+glorys_phy_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()
+glorys_phy_bot %>% filter(longitude>-130) %>% ggplot(aes(bot))+geom_density()
+
+# for the BGC model
+glorys_bgc_bot <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_o2.nc')) %>% 
+  hyper_filter(time=index==1) %>% 
+  hyper_tibble() %>% 
+  group_by(longitude,latitude) %>% 
+  summarise(bot=last(depth)) %>% 
+  ungroup()
+
+# visualize
+glorys_bgc_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()
+glorys_bgc_bot %>% filter(longitude>-130) %>% ggplot(aes(bot))+geom_density()
+
+```
+
+## Build Grid IDs
+
+For each version of GLORYS (1/12 deg and 1/4 deg), build a grid identifier to facilitate matching to trawl data
+
+```{r}
+glorys_phy_grid <- glorys_phy_bot %>%
+  st_as_sf(coords=c('longitude','latitude'),crs=4326,remove = F) %>%  
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+  mutate(gridID_phy=row_number()) %>% 
+  mutate(lonUTM=st_coordinates(.)[,1],latUTM=st_coordinates(.)[,2]) %>% 
+  st_set_geometry(NULL)
+
+glorys_bgc_grid <- glorys_bgc_bot %>%
+  st_as_sf(coords=c('longitude','latitude'),crs=4326,remove = F) %>%  
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>% 
+  mutate(gridID_bgc=row_number()) %>% 
+  mutate(lonUTM=st_coordinates(.)[,1],latUTM=st_coordinates(.)[,2])%>% 
+  st_set_geometry(NULL)
+```
+
+# Spatial Matching
+
+We need to join trawl locations to their nearest GLORYS grid cell
+
+## Trawl Locations
+
+Import trawl data
+```{r}
+trawl <- read_rds(here('data','nwfsc_trawl_data.rds')) %>% 
+  # convert date from character to date
+  mutate(date=as_date(date))
+```
+
+Get locations
+
+```{r}
+trawl_locs <- trawl %>% 
+  distinct(longitude_dd,latitude_dd,.keep_all = T) %>% 
+  # select the variable we'll use to match
+  dplyr::select(date,longitude_dd,latitude_dd,depth_trawl=depth) %>% 
+  # convert to UTM10
+  st_as_sf(coords=c('longitude_dd','latitude_dd'),crs=4326,remove = F) %>%  
+  st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
+  mutate(lontrawlUTM=st_coordinates(.)[,1],lattrawlUTM=st_coordinates(.)[,2])%>% 
+  st_set_geometry(NULL)
+```
+
+## Grid Match
+
+Here are the datasets we are trying to match
+```{r}
+ggplot()+
+  geom_point(data=glorys_phy_grid %>% filter(lonUTM>200),aes(lonUTM,latUTM,color=bot))+
+  geom_point(data=trawl_locs,aes(lontrawlUTM,lattrawlUTM),color='red',size=0.5)
+```
+
+Find nearest neighbor matches between trawl and GLORYS
+
+```{r}
+trawlxy <- trawl_locs %>% dplyr::select(lontrawlUTM,lattrawlUTM)
+glorys_phy_xy <- glorys_phy_grid %>% dplyr::select(lonUTM,latUTM)
+glorys_bgc_xy <- glorys_bgc_grid %>% dplyr::select(lonUTM,latUTM)
+
+# each trawl location matched to its nearest neighbor from GLORYS physics
+trawl_glorys_phy_nn <- nn2(glorys_phy_xy,trawlxy,k=1)[[1]]
+
+# each trawl location matched to its nearest neighbor from GLORYS biogeochemistry
+trawl_glorys_bgc_nn <- nn2(glorys_bgc_xy,trawlxy,k=1)[[1]]
+
+# add these identifiers to the trawl locations datasets
+trawl_glorys_match <- trawl_locs %>% 
+  mutate(glorys_match_phy=as.integer(trawl_glorys_phy_nn),
+         glorys_match_bgc=as.integer(trawl_glorys_bgc_nn))
+```
+
+
+# Join to Trawl Data
+
+## Import Trawl Data
+```{r}
+trawl <- trawl %>% 
+  left_join(trawl_glorys_match,by=c("date"="date","longitude_dd","latitude_dd")) %>% 
+  # thin columns to just the ones we (may) need for SDMs
+  dplyr::select(date,year,species,scientific_name,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl=depth,area_swept_ha,glorys_match_bgc,glorys_match_phy)
+```
+
+## Join
+
+The last thing we need is GLORYS time conversion. According to the GLORYS metadata, time is in "hours since 1950-01-01".
+
+```{r}
+glorys_times <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc')) %>% 
+  activate("D0") %>% 
+  hyper_tibble() %>% 
+  # make a match from GLORYS time to a normal date-time string
+  mutate(glorys_dttm=as_datetime("1950-01-01 00:00:00")+hours(time)) %>% 
+  mutate(year=year(glorys_dttm))
+
+glimpse(glorys_times)
+range(glorys_times$year)
+# ncdf4::nc_open(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc'))
+
+```
+
+
+Short function to join one year of data at a time (so the import from the .nc file isn't too onerous)
+```{r}
+join_glorys_trawl <- function(yr){
+  trawl_yr <- trawl %>% 
+    filter(year==yr) %>% 
+    # month identifier
+    mutate(mth=month(date))
+  times_we_need <- glorys_times %>% 
+    filter(year==yr) %>% 
+    pull(time)
+  tstart <- min(times_we_need); tstop <- max(times_we_need)
+  
+  glorys_yr_phy <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc')) %>% 
+    # pre-filter for the correct year
+    hyper_filter(time=time>=tstart&time<=tstop,longitude=longitude>-130) %>% 
+    hyper_tibble() %>% 
+    group_by(longitude,latitude) %>% 
+    slice_max(depth) %>% 
+    ungroup() %>% 
+    # join grid identifier
+    left_join(glorys_phy_grid,by=c('longitude','latitude')) %>% 
+    # join time identifier
+    left_join(glorys_times,by='time') %>% 
+    mutate(mth=month(glorys_dttm))
+  
+  glorys_yr_bgc <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_o2.nc')) %>% 
+    hyper_filter(time=time>=tstart&time<=tstop,longitude=longitude>-130) %>% 
+    hyper_tibble() %>% 
+    group_by(longitude,latitude) %>% 
+    slice_max(depth) %>% 
+    ungroup() %>% 
+    left_join(glorys_bgc_grid,by=c('longitude','latitude')) %>% 
+    # join time identifier
+    left_join(glorys_times,by='time') %>% 
+    mutate(mth=month(glorys_dttm)) %>% 
+    dplyr::select(o2,mth,year,gridID_bgc)
+  
+  # left_join glorys to trawl for year 'yr'
+  trawl_glorys_yr <- trawl_yr %>% 
+    left_join(glorys_yr_phy,by=c("glorys_match_phy"="gridID_phy","mth","year")) %>% 
+    left_join(glorys_yr_bgc,by=c("glorys_match_bgc"="gridID_bgc","mth","year"))
+  
+  # clean up columns and finish
+  out <- trawl_glorys_yr %>% 
+    dplyr::select(date_trawl=date,year,species,scientific_name,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl,glorys_dttm,
+                  depth_glorys=depth,glorys_time=time,longlorysUTM=lonUTM,latglorysUTM=latUTM,thetao,o2)
+  out
+}
+```
+
+Test this for one year
+```{r}
+trawl_glorys_2003 <- join_glorys_trawl(yr=2003)
+glimpse(trawl_glorys_2003)
+
+# How well do the depths match?
+depth_trawl_vs_glorys <- trawl_glorys_2003 %>% 
+  ggplot(aes(depth_trawl,depth_glorys))+
+  geom_point(size=0.5)+
+  geom_smooth(method='lm')+
+  geom_smooth(color='red')+
+  labs(x="Depth of Trawl",y="Depth from GLORYS")
+depth_trawl_vs_glorys
+
+depth_trawl_vs_glorys_diff <- trawl_glorys_2003 %>% 
+  mutate(depthdiff=depth_trawl-depth_glorys) %>% 
+  ggplot(aes(depth_trawl,depthdiff))+
+  geom_point(size=0.5)+
+  geom_hline(yintercept=0)+
+  geom_smooth()+
+  labs(x="Depth of Trawl",y="Trawl Minus GLORYS")
+depth_trawl_vs_glorys_diff
+```
+
+Do the join for all years
+
+```{r}
+trawl_glorys_joined <- purrr::map_df(2003:2017,join_glorys_trawl)
+# for some reason this didn't run with all years at once (maybe memory hole), so just row bind
+trawl_glorys_2018 <- join_glorys_trawl(2018)
+trawl_glorys_joined <- trawl_glorys_joined %>% 
+  bind_rows(trawl_glorys_2018)
+```
+
+## Save
+```{r}
+write_rds(trawl_glorys_joined,here('data','trawl_glorys_joined.rds'))
+```
+
+

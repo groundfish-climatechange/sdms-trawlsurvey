@@ -132,7 +132,7 @@ glorys_full <- glorys %>% summarise() %>% st_convex_hull()%>%
   st_difference(coast %>% summarise())
 
 # roms domain (for display purposes)
-roms_domain <- read_rds(here::here('data','roms_latlon_key.rds')) %>% 
+roms_domain <- read_rds(here::here('data','roms_latlon_depth_key_topleft_start.rds')) %>% 
   mutate(roms_cell=row_number()) %>% 
   st_as_sf(coords=c('lon','lat'),crs=4326) %>%
   summarise() %>% 

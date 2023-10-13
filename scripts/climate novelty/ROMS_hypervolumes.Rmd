@@ -26,8 +26,13 @@ theme_set(plot_theme)
 ```
 
 ```{r}
+# original ROMS rasters
+roms_fls <- list.files(here('data','hypervolumes','projection rasters'),full.names=T)
+```
+
+```{r}
 #SDM projection extent, to mask the rasters
-proj_ext <- read_rds(here::here('data','cropped_domain_for_projected_sdms.rds')) %>% vect()
+proj_ext <- read_rds(here::here('data','cropped_domain_for_projected_sdms.rds')) %>% vect() %>% project(rast(roms_fls[1]))
 ```
 
 
@@ -74,7 +79,6 @@ We need to organize the historical and projected ROMS data into data frames and 
 Could do this with a masked projection area (e.g., trawl survey footprint)
 
 ```{r}
-roms_fls <- list.files(here('data','hypervolumes','projection rasters'),full.names=T)
 
 # for each ESM type, make a raster stack for the appropriate years
 gfdl_bt_historical <- roms_fls %>% str_subset('gfdl_bt') %>% str_subset('.grd') %>% rast() %>% subset(1:31) %>% mask(proj_ext)
@@ -126,10 +130,10 @@ Normalize values
 env_vars <- setdiff(names(historical_all),c("year","lat","lon"))
 
 means <- historical_all %>% 
-  summarise(across(all_of(env_vars),mean,na.rm=T)) #'global' values used to standardise all your data
+  summarise(across(all_of(env_vars),\(x) mean(x, na.rm = TRUE))) #'global' values used to standardise all your data
 
 SDs <- historical_all %>% 
-  summarise(across(all_of(env_vars),sd,na.rm=T))
+  summarise(across(all_of(env_vars),\(x) sd(x, na.rm = TRUE)))
 
 hist_data_s <- historical_all %>% 
   dplyr::select(all_of(env_vars)) %>% 
@@ -288,7 +292,7 @@ had_ts <- inclusion_ts(had_proj,plot=F) %>% mutate(esm='hadley')
 
 ```{r}
 # roms cell matching key
-roms_ll <- read_rds(here::here('data','roms_latlon_key_topleft_start.rds')) %>% 
+roms_ll <- read_rds(here::here('data','roms_latlon_depth_key_topleft_start.rds')) %>% 
   mutate(roms_cell=row_number())
 
 rast_to_df <- function(proj_rasters){
@@ -335,12 +339,12 @@ novelty_3ESMs <- bind_rows(gfdl_ts,ipsl_ts,had_ts) %>%
 
 novelty_3ESMs
 
-ggsave(here('plots','novelty_3ESMs.png'),novelty_3ESMs,w=7,h=4)
+ggsave(here('model output','climate novelty','novelty_3ESMs.png'),novelty_3ESMs,w=7,h=4)
 #gifs
 
-animate_ts(gfdl_proj,fname=here::here('plots','gfdl_novelty'))
-animate_ts(ipsl_proj,fname=here::here('plots','ipsl_novelty'))
-animate_ts(had_proj,fname=here::here('plots','had_novelty'))
+animate_ts(gfdl_proj,fname=here::here('model output','climate novelty','gfdl_novelty'))
+animate_ts(ipsl_proj,fname=here::here('model output','climate novelty','ipsl_novelty'))
+animate_ts(had_proj,fname=here::here('model output','climate novelty','had_novelty'))
 ```
 
 

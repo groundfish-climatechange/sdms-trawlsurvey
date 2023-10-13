@@ -1,7 +1,7 @@
 ---
 title: "Selected SDMs for West Coast Groundfish"
 author: "Owen Liu"
-date: '2023-09-05'
+date: '2023-10-11'
 output: html_document
 ---
 
@@ -15,7 +15,7 @@ library(vista) # for some output plotting
 
 # Introduction
 
-Running SDMs using `sdmTMB` for California Current elasmobranchs and flatfish, following Janelle Layton's cross-validation [model selection](https://docs.google.com/spreadsheets/d/1gTmQwU91oO_JewZJpgWHUXUdn9pyqxpm/edit#gid=510573475)
+Running SDMs using `sdmTMB` for California Current elasmobranchs, rockfish, flatfish, and other key species.
 
 First, we load survey and environmental data used for fitting and projection.
 
@@ -45,7 +45,7 @@ prepare_species <- function(dat,spp){
 
 ## Run SDM
 
-This is a wrapper around `sdmTMB::sdmTMB()` that includes data construction, and allows for options on whether to include various covariates (depth, substrate) and how to model them in the mixed effects framework (e.g., GAM splines vs. quadratics)
+This is a wrapper around `sdmTMB::sdmTMB()` that includes data construction, and allows for options on whether to include various covariates (depth, substrate) and how to model them in the mixed effects framework (e.g., GAM splines vs. quadratics).
 
 ```{r}
 run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_substrate=T,hab_spline=T,env_spline=T,spline_k=3){
@@ -121,7 +121,7 @@ m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_subs
 
 ## Diagnostic Plots
 
-QQ plot, spatiotemporal predictions, spatiotemporal residuals
+Functions to produce QQ plots, spatiotemporal predictions, and spatiotemporal residuals
 
 ```{r}
 make_diagnostic_plots <- function(m){
@@ -156,7 +156,7 @@ make_diagnostic_plots(m)
 
 ## Make Projections
 
-Choose a gcm (Hadley=`hadl`, GFDL=`gfdl`,IPSL=`ipsl`)
+Function to make predictions of future species distributions. Here, we choose from on of three global climate model projections (Hadley=`hadl`, GFDL=`gfdl`,IPSL=`ipsl`)
 
 ```{r}
 make_predictions <- function(modelobj,gcm="hadl"){
@@ -361,7 +361,7 @@ plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
 plot_single_env_relationship(fit = m)
 ```
 
-Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as conditional responses of CPUE to the given variable, conditional on the other variables being held at their median values.
+Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as marginal responses of CPUE to the given variable, conditional on the other variables being held at their median values.
 
 ```{r}
 plot_all_env_relationships <- function(m){
@@ -409,7 +409,7 @@ Wrap all of the above to make a "push go" function for a species to:
 *   Save projected data
 
 ```{r}
-process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_substrate,dir.out=here::here('model output')){
+process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_substrate,dir.out=here::here('model output','climate novelty','roms')){
   tic(paste(species,"processing total time"))
   tic(paste("Fitting model for",species))
   # run model
@@ -466,170 +466,172 @@ process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_sub
 
 # Apply to Species
 
+As of 10.10.2023, we have decided for this particular project to model each species with consistent covariates (temperature, oxygen, and depth), to facilitate comparison between them.
+
 ## Elasmobranchs
 
-Longnose skate: depth and substrate
+Longnose skate
 ```{r}
-process_species_model(species='longnose skate',incl_depth = T,incl_substrate = T)
+process_species_model(species='longnose skate',incl_depth = T,incl_substrate = F)
 ```
 
-Big skate: depth and substrate
+Big skate
 ```{r}
-process_species_model(species='big skate',incl_depth = T,incl_substrate = T)
+process_species_model(species='big skate',incl_depth = T,incl_substrate = F)
 ```
-Pacific spiny dogfish: temperature and oxygen only
+Pacific spiny dogfish
 ```{r}
-process_species_model(species='pacific spiny dogfish',incl_depth = F,incl_substrate = F)
+process_species_model(species='pacific spiny dogfish',incl_depth = T,incl_substrate = F)
 ```
 
-Spotted ratfish: depth
+Spotted ratfish
 ```{r}
 process_species_model(species='spotted ratfish',incl_depth = T,incl_substrate = F)
 ```
 
 ## Flatfish
 
-Dover sole: depth
+Dover sole
 ```{r}
 process_species_model(species='dover sole',incl_depth = T,incl_substrate = F)
 ```
 
-Curlfin sole: substrate
+Curlfin sole
 ```{r}
-process_species_model(species='curlfin sole',incl_depth = F,incl_substrate = T)
+process_species_model(species='curlfin sole',incl_depth = T,incl_substrate = F)
 ```
 
-Rex sole: depth
+Rex sole
 ```{r}
 process_species_model(species='rex sole',incl_depth = T,incl_substrate = F)
 ```
 
-Slender sole: depth and substrate
+Slender sole
 ```{r}
-process_species_model(species='slender sole',incl_depth = T,incl_substrate = T)
+process_species_model(species='slender sole',incl_depth = T,incl_substrate = F)
 ```
 
-Petrale sole: substrate
+Petrale sole
 ```{r}
-process_species_model(species='petrale sole',incl_depth = F,incl_substrate = T)
+process_species_model(species='petrale sole',incl_depth = T,incl_substrate = F)
 ```
 
-English sole: depth and substrate
+English sole
 ```{r}
-process_species_model(species='english sole',incl_depth = T,incl_substrate = T)
+process_species_model(species='english sole',incl_depth = T,incl_substrate = F)
 ```
 
-Arrowtooth flounder: depth and substrate
+Arrowtooth flounder
 ```{r}
-process_species_model(species='arrowtooth flounder',incl_depth = T,incl_substrate = T)
+process_species_model(species='arrowtooth flounder',incl_depth = T,incl_substrate = F)
 ```
 
-Pacific sanddab: substrate
+Pacific sanddab
 ```{r}
-process_species_model(species='pacific sanddab',incl_depth = F,incl_substrate = T)
+process_species_model(species='pacific sanddab',incl_depth = T,incl_substrate = F)
 ```
 
 ## Rockfish
-Aurora rockfish: depth and substrate
+Aurora rockfish
 ```{r}
-process_species_model(species='aurora rockfish',incl_depth = T,incl_substrate = T)
+process_species_model(species='aurora rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Bocaccio rockfish: substrate
+Bocaccio rockfish
 ```{r}
-process_species_model(species='bocaccio',incl_depth = F,incl_substrate = T)
+process_species_model(species='bocaccio',incl_depth = F,incl_substrate = F)
 ```
 
-Canary rockfish: substrate
+Canary rockfish
 ```{r}
-process_species_model(species='canary rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='canary rockfish',incl_depth = F,incl_substrate = F)
 ```
 
-Chilipepper rockfish: substrate
+Chilipepper rockfish
 ```{r}
-process_species_model(species='chilipepper',incl_depth = F,incl_substrate = T)
+process_species_model(species='chilipepper',incl_depth = F,incl_substrate = F)
 ```
 
-Darkblotched rockfish: depth and substrate
+Darkblotched rockfish
 ```{r}
-process_species_model(species='darkblotched rockfish',incl_depth = T,incl_substrate = T)
+process_species_model(species='darkblotched rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Greenstriped rockfish: substrate
+Greenstriped rockfish
 ```{r}
-process_species_model(species='greenstriped rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='greenstriped rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Pacific ocean perch: substrate
+Pacific ocean perch
 ```{r}
-process_species_model(species='pacific ocean perch',incl_depth = F,incl_substrate = T)
+process_species_model(species='pacific ocean perch',incl_depth = T,incl_substrate = F)
 ```
 
-Sharpchin rockfish: substrate
+Sharpchin rockfish
 ```{r}
-process_species_model(species='sharpchin rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='sharpchin rockfish',incl_depth = F,incl_substrate = F)
 ```
 
-Shortbelly rockfish: substrate
+Shortbelly rockfish
 ```{r}
-process_species_model(species='shortbelly rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='shortbelly rockfish',incl_depth = F,incl_substrate = F)
 ```
 
-Shortraker rockfish: substrate
+Shortraker rockfish
 ```{r}
 process_species_model(species='shortraker rockfish',incl_depth = F,incl_substrate = T)
 ```
 
-Splitnose rockfish: depth and substrate
+Splitnose rockfish
 ```{r}
-process_species_model(species='splitnose rockfish',incl_depth = T,incl_substrate = T)
+process_species_model(species='splitnose rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Stripetail rockfish: temperature and oxygen only
+Stripetail rockfish
 ```{r}
 process_species_model(species='stripetail rockfish',incl_depth = F,incl_substrate = F)
 ```
 
-Widow rockfish: substrate
+Widow rockfish
 ```{r}
-process_species_model(species='widow rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='widow rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Yelloweye rockfish: substrate
+Yelloweye rockfish
 ```{r}
-process_species_model(species='yelloweye rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='yelloweye rockfish',incl_depth = F,incl_substrate = F)
 ```
 
-Yellowtail rockfish: substrate
+Yellowtail rockfish
 ```{r}
-process_species_model(species='yellowtail rockfish',incl_depth = F,incl_substrate = T)
+process_species_model(species='yellowtail rockfish',incl_depth = F,incl_substrate = F)
 ```
 
 ## Other
 
-Lingcod: depth and substrate
+Lingcod
 ```{r}
-process_species_model(species='lingcod',incl_depth = T,incl_substrate = T)
+process_species_model(species='lingcod',incl_depth = T,incl_substrate = F)
 ```
 
-Longspine thornyhead: depth and substrate
+Longspine thornyhead
 ```{r}
-process_species_model(species='longspine thornyhead',incl_depth = T,incl_substrate = T)
+process_species_model(species='longspine thornyhead',incl_depth = T,incl_substrate = F)
 ```
 
-Pacific grenadier: depth
+Pacific grenadier
 ```{r}
 process_species_model(species='pacific grenadier',incl_depth = T,incl_substrate = F)
 ```
 
-Sablefish: temperature and oxygen only
+Sablefish
 ```{r}
-process_species_model(species='sablefish',incl_depth = F,incl_substrate = F)
+process_species_model(species='sablefish',incl_depth = T,incl_substrate = F)
 ```
 
-Shortspine thornyhead: substrate
+Shortspine thornyhead
 ```{r}
-process_species_model(species='shortspine thornyhead',incl_depth = F,incl_substrate = T)
+process_species_model(species='shortspine thornyhead',incl_depth = T,incl_substrate = F)
 ```
 
 
