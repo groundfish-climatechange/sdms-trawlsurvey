@@ -41,7 +41,7 @@ roms_oxycomp <- roms %>%
 roms_oxycomp
 
 # lingcod
-ling <- read_rds(here('model output','lingcod','projection_3ESMs.rds')) %>% 
+ling <- read_rds(here('model output','climate novelty','roms','lingcod','projection_3ESMs.rds')) %>% 
   dplyr::select(year,lat,lon,latitude,longitude,est)
 glimpse(ling)
 

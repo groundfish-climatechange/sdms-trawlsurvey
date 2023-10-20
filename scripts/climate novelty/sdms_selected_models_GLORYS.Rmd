@@ -1,5 +1,5 @@
 ---
-title: "Selected SDMs for West Coast Groundfish"
+title: "Selected SDMs for West Coast Groundfish using GLORYS"
 author: "Owen Liu"
 date: '2023-10-11'
 output: html_document
@@ -21,7 +21,7 @@ First, we load survey and environmental data used for fitting and projection.
 
 # Load Data
 ```{r}
-rmarkdown::render(here::here('scripts','sdmTMB-data-construction.Rmd'),quiet=TRUE)
+rmarkdown::render(here::here('scripts','sdmTMB-data-construction-glorys.Rmd'),quiet=TRUE)
 ```
 
 Next, we outline the functions we will use to fit, project, and visualize model outputs.

@@ -1,0 +1,74 @@
+---
+title: "Derive SDM Metrics"
+author: "Owen R. Liu"
+date: "2023-10-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(cowplot)
+library(hypervolume)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(dplyr.summarise.inform=FALSE)
+```
+
+```{r}
+# ggplot theme
+plot_theme <-   theme_minimal()+
+  theme(text=element_text(family="sans",size=12,color="black"),
+        legend.text = element_text(size=10),
+        legend.title = element_text(size=10),
+        axis.title=element_text(family="sans",size=14,color="black"),
+        axis.text=element_text(family="sans",size=10,color="black"),
+        panel.grid.major = element_line(color="gray50",linetype=3))
+theme_set(plot_theme)
+```
+
+# Purpose
+
+Using fitted and projected SDMs, calculate useful indicators of species' environmental niches and responses to projected climate change
+
+# Functions
+
+Here are the functions we will use to calculate the individual metrics, based on the fitted SDMs and projected data.
+
+```{r}
+# import one set of data to start
+bs <- read_rds(here('model output','climate novelty','roms','big skate','projection_3ESMs.rds'))
+ds <- read_rds(here('model output','climate novelty','roms','dover sole','projection_3ESMs.rds'))
+```
+
+## Species' Hypervolume
+
+The years 1980 to 2010 are used (for now) to establish a historical hypervolume for each species/ESM combination. Choices in this function include the years of predicted/projected data to use for hv calculation, the ESM chosen, and the quantile threshold for indicating presence vs. absence.
+
+```{r}
+calc_hv <- function(df,esm_name,year_range,est_thresh=0.1,max_sample=1e5){
+  dfsub <- df %>% 
+    # for now, we use all values greater than the 10% quantile for the species across all years (incl. projected years)
+    filter(est>=quantile(est,est_thresh)) %>% 
+    filter(esm==esm_name,year %in% year_range) %>% 
+    dplyr::select(contains(esm_name),depth_m) %>% 
+    mutate(depth_m=-depth_m)
+  set.seed(123)
+  if(nrow(dfsub)>max_sample){
+    dfsub <- dfsub %>% slice_sample(n=max_sample)
+  }
+  tic("Calculated hypervolume.")
+  hv <- hypervolume(data=dfsub,method='svm')
+  toc()
+  return(hv)
+}
+```
+
+```{r}
+bs_hv <- calc_hv(bs,esm_name="ipsl",year_range=1980:2010)
+plot(bs_hv,show.3d=TRUE,show.random=F,show.density=T,show.data=T)
+
+ds_hv <- calc_hv(ds,esm_name="ipsl",year_range=1980:2010)
+plot(ds_hv,show.3d=TRUE,show.random=F,show.density=T,show.data=T)
+```
+
