@@ -39,7 +39,7 @@ prepare_species <- function(dat,spp){
     mutate(across(c(depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30),~(scale(.) %>% as.vector()),.names="{.col}_norm")) %>% 
     
     # add a year indicator
-    mutate(year=lubridate::year(date))
+    mutate(year=lubridate::year(date) %>% as.integer())
 }
 ```
 
@@ -89,7 +89,11 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
     formula = paste0(formula, " + ", substrate, " + ", enviro)
     time_varying = NULL
     time = "year"
+    # time=NULL
   }
+  #extra time needed to make room for predictions?
+  et<-setdiff(1980:2100,unique(year(trawl_roms_utm$date)))
+  
   print('running model.')
   m <- try( sdmTMB(
     formula = as.formula(formula),
@@ -100,8 +104,9 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
     data = modeldat,
     anisotropy = FALSE,
     spatial = spatial_field,
+    spatiotemporal = "off",
     #extra_time argument necessary for prediction
-    extra_time=1980:2100),
+    extra_time=et),
   silent=F)
 
   if(class(m)=="try-error"){
@@ -116,7 +121,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
 ```
 
 ```{r,eval=F}
-m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
+m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=F) # all other options default
 ```
 
 ## Diagnostic Plots
@@ -124,9 +129,9 @@ m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_subs
 Functions to produce QQ plots, spatiotemporal predictions, and spatiotemporal residuals
 
 ```{r}
-make_diagnostic_plots <- function(m){
+make_diagnostic_plots <- function(m,dat=trawl_roms_utm){
   spp=unique(m$data$species)
-  sppdat <- prepare_species(trawl_roms_utm,spp)
+  sppdat <- prepare_species(dat,spp)
   resids <- residuals(m)[1:nrow(sppdat),1] %>% as_tibble()
   sppdat$resid=resids$value
   
@@ -158,7 +163,7 @@ make_diagnostic_plots(m)
 
 Function to make predictions of future species distributions. Here, we choose from on of three global climate model projections (Hadley=`hadl`, GFDL=`gfdl`,IPSL=`ipsl`)
 
-```{r}
+```{r,message=F}
 make_predictions <- function(modelobj,gcm="hadl"){
 
   original_model_data <- modelobj$data
@@ -202,7 +207,9 @@ make_predictions <- function(modelobj,gcm="hadl"){
   # now we can make the predictions
   predicted_cpue_km2 <- predict(modelobj,newdata,return_tmb_object=F,extra_time=yrs)
   
-  predicted_cpue_km2
+  predicted_cpue_km2 %>% 
+    # join the rest of the data back
+    left_join(newdata)
 }
 ```
 
@@ -311,13 +318,47 @@ make_two_diff_maps <- function(spp_preds){
 
 ## Environmental Relationships
 
+THIS IS A MESS RIGHT NOW.
+
+```{r}
+# library(ggeffects)
+# 
+# # from tutorial:
+# mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
+# fit <- sdmTMB(
+#   density ~ s(depth),
+#   data = pcod,
+#   mesh = mesh,
+#   family = tweedie(link = "log"),
+#   spatial = "on",
+#   extra_time = 2000:2100
+# )
+# # ggeffects::ggpredict(fit, "depth [50:400, by=2]") |> plot()
+# fitpred <- predict(fit)
+# 
+# mpred <- predict(m)
+# ?ggpredict
+# x <- ggeffects::ggpredict(m,"depth_trawl_norm [-0.5:0.5,by=0.1]")
+# plot(x)
+# 
+# original_predvar = str_sub("depth_trawl_norm",end=-6L)
+# 
+# predvar_dat=m$data %>% dplyr::select(all_of(original_predvar)) %>% pluck(1)
+# mean_predvar <- mean(predvar_dat,na.rm=T)
+# sd_predvar <- sd(predvar_dat,na.rm=T)
+# predvar_trans <- (x %>% pluck(1))*sd_predvar+mean_predvar
+# 
+# # add the transformation to the fitted relationship
+# plot(x)
+```
+
 We can take advantage of the `visreg` package to look at the environmental response. We want to pull the data from it to back-transform the predictors into their original scale.
 
 ```{r}
 plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
   
-  # use visreg to do the fit for us
-  x <- visreg(fit=fit,xvar=predvar,scale='response',plot=FALSE)
+  # use visreg to do the fit for us 
+  x <- visreg(fit=fit,xvar=predvar,scale='response',plot=FALSE,type='conditional')
   datfit <- x$fit
   
   # if the response is not substrate, have to back-transform the predictor variable
@@ -358,7 +399,7 @@ plot_single_env_relationship <- function(fit,predvar="depth_trawl_norm"){
 ```
 
 ```{r,eval=F}
-plot_single_env_relationship(fit = m)
+plot_single_env_relationship(fit = m,predvar = "mean_temp_roms_30_norm")
 ```
 
 Conditional plots for environmental relationships. Important note here: the way that `visreg` seems to work is that it calculates a range of values of the focal variable (here, `predvar`), then predicts using the model and *the median values of the other variables*. So, these environmental relationships need to be viewed as marginal responses of CPUE to the given variable, conditional on the other variables being held at their median values.
@@ -413,12 +454,12 @@ process_species_model <- function(dat=trawl_roms_utm,species,incl_depth,incl_sub
   tic(paste(species,"processing total time"))
   tic(paste("Fitting model for",species))
   # run model
-  m <- run_sdmTMB(dat = trawl_roms_utm,spp=species,use_depth=incl_depth,time_vary = F,spatial_field = F,include_substrate = incl_substrate,hab_spline = T,env_spline = T,spline_k = 3)
+  m <- run_sdmTMB(dat = dat,spp=species,use_depth=incl_depth,time_vary = F,spatial_field = F,include_substrate = incl_substrate,hab_spline = T,env_spline = T,spline_k = 3)
   toc()
   
   # make diagnostic plots
   tic(paste("Making diagnostic plots for",species))
-  diagplots <- make_diagnostic_plots(m)
+  diagplots <- make_diagnostic_plots(m,dat=dat)
   toc()
   
   # make env affinity plots
@@ -471,7 +512,7 @@ As of 10.10.2023, we have decided for this particular project to model each spec
 ## Elasmobranchs
 
 Longnose skate
-```{r}
+```{r,message=F}
 process_species_model(species='longnose skate',incl_depth = T,incl_substrate = F)
 ```
 
@@ -537,19 +578,33 @@ Aurora rockfish
 process_species_model(species='aurora rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Bocaccio rockfish
+Bocaccio rockfish- depth-restricted model
+
 ```{r}
-process_species_model(species='bocaccio',incl_depth = F,incl_substrate = F)
+# process_species_model(species='bocaccio',incl_depth = T,incl_substrate = F)
+# crop to areas <= 500m depth
+# tempdat <- prepare_species(trawl_roms_utm,"bocaccio")
+# # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #333m
+
+trawl_depthcrop_500m <- trawl_roms_utm %>%
+  filter(depth_trawl<=500)
+# 
+process_species_model(dat=trawl_depthcrop_500m,species = "bocaccio",incl_depth=T,incl_substrate = F)
 ```
 
-Canary rockfish
+Canary rockfish- depth-restricted model
 ```{r}
-process_species_model(species='canary rockfish',incl_depth = F,incl_substrate = F)
+# process_species_model(species='canary rockfish',incl_depth = T,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"canary rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #264m
+process_species_model(dat=trawl_depthcrop_500m,species = "canary rockfish",incl_depth=T,incl_substrate = F)
 ```
 
 Chilipepper rockfish
 ```{r}
-process_species_model(species='chilipepper',incl_depth = F,incl_substrate = F)
+process_species_model(species='chilipepper',incl_depth = T,incl_substrate = F)
 ```
 
 Darkblotched rockfish
@@ -567,19 +622,30 @@ Pacific ocean perch
 process_species_model(species='pacific ocean perch',incl_depth = T,incl_substrate = F)
 ```
 
-Sharpchin rockfish
+Sharpchin rockfish - depth-restricted model
 ```{r}
-process_species_model(species='sharpchin rockfish',incl_depth = F,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"sharpchin rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #454m
+
+process_species_model(dat = trawl_depthcrop_500m, species='sharpchin rockfish',incl_depth = T,incl_substrate = F)
 ```
 
-Shortbelly rockfish
+Shortbelly rockfish - depth-restricted model 
+
 ```{r}
-process_species_model(species='shortbelly rockfish',incl_depth = F,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"shortbelly rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #406m
+process_species_model(dat=trawl_depthcrop_500m,species='shortbelly rockfish',incl_depth = T,incl_substrate = F)
 ```
 
 Shortraker rockfish
 ```{r}
-process_species_model(species='shortraker rockfish',incl_depth = F,incl_substrate = T)
+# tempdat <- prepare_species(trawl_roms_utm,"shortraker rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #458m
+process_species_model(dat=trawl_depthcrop_500m, species='shortraker rockfish',incl_depth = T,incl_substrate = F)
 ```
 
 Splitnose rockfish
@@ -589,7 +655,10 @@ process_species_model(species='splitnose rockfish',incl_depth = T,incl_substrate
 
 Stripetail rockfish
 ```{r}
-process_species_model(species='stripetail rockfish',incl_depth = F,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"stripetail rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #435m
+process_species_model(dat=trawl_depthcrop_500m,species='stripetail rockfish',incl_depth = T,incl_substrate = F)
 ```
 
 Widow rockfish
@@ -599,12 +668,19 @@ process_species_model(species='widow rockfish',incl_depth = T,incl_substrate = F
 
 Yelloweye rockfish
 ```{r}
-process_species_model(species='yelloweye rockfish',incl_depth = F,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"yelloweye rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #250m
+# trawl_depthcrop_300m <- trawl_roms_utm %>% filter(depth_trawl<=300)
+process_species_model(dat=trawl_depthcrop_300m,species='yelloweye rockfish',incl_depth = T,incl_substrate = F)
 ```
 
 Yellowtail rockfish
 ```{r}
-process_species_model(species='yellowtail rockfish',incl_depth = F,incl_substrate = F)
+# tempdat <- prepare_species(trawl_roms_utm,"yellowtail rockfish")
+# # # check deepest observed depth
+# tempdat %>% filter(cpue_kg_km2>0) %>% pull(depth_trawl) %>% max() #343m
+process_species_model(dat=trawl_depthcrop_500m,species='yellowtail rockfish',incl_depth = T,incl_substrate = F)
 ```
 
 ## Other
@@ -633,5 +709,57 @@ Shortspine thornyhead
 ```{r}
 process_species_model(species='shortspine thornyhead',incl_depth = T,incl_substrate = F)
 ```
+
+# Troubleshooting Area
+
+Below
+
+```{r,eval=F}
+# try bocaccio with depth
+bocdat <- prepare_species(trawl_roms_utm,"bocaccio")
+meshcheck <- make_mesh(bocdat,xy_cols = c('longitude','latitude'), 
+                   cutoff = 20)
+# crop to general areas that have had positive observations at some point in the past
+boccrop <- bocdat %>% 
+  filter(cpue_kg_km2>0)
+# max observed depth for bocaccio is 333m
+# crop to areas <= 500m depth?
+boc_depthcrop <- bocdat %>% 
+  filter(depth_trawl<=500)
+
+meshcheck <- make_mesh(boc_depthcrop,xy_cols = c('longitude','latitude'), 
+                   cutoff = 20)
+
+trawl_roms_utm %>%
+  sample_n(5000) %>% 
+  ggplot(aes(longitude,latitude))+
+  geom_point(size=0.5)+
+  coord_equal()+
+  ggtitle("Extent of All Samples")
+
+boccrop %>%
+  ggplot(aes(longitude,latitude))+
+  geom_point(size=0.5)+
+  coord_equal()+
+  ggtitle("Positive Samples")
+boc_depthcrop%>%
+  ggplot(aes(longitude,latitude))+
+  geom_point(size=0.5)+
+  coord_equal()+
+  ggtitle("Samples <= 500m")
+```
+
+```{r,eval=F}
+# try modeling with these different datasets
+m1 <- run_sdmTMB(dat=trawl_roms_utm,spp="bocaccio",use_depth=T,include_substrate=F) 
+m2 <- run_sdmTMB(dat=boc_depthcrop,spp="bocaccio",use_depth=T,include_substrate=F) # this worked fine!
+x <- make_diagnostic_plots(m=m2,dat=trawl_depthcrop_500m)
+```
+
+```{r blackrf, eval=F}
+x <- prepare_species(trawl_roms_utm,"black rockfish")
+y <- x %>% filter(cpue_kg_km2>0)
+```
+
 
 

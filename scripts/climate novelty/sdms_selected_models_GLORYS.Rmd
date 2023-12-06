@@ -7,10 +7,18 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
 library(cowplot) # for organizing multipanel plots
 library(visreg) # for visualizing conditional environmental relationships
 library(tictoc) # for timing
 library(vista) # for some output plotting
+library(sdmTMB)
+library(lubridate)
+library(sf)
+library(rnaturalearth)
+library(viridis)
+library(cowplot)
 ```
 
 # Introduction
@@ -21,7 +29,11 @@ First, we load survey and environmental data used for fitting and projection.
 
 # Load Data
 ```{r}
-rmarkdown::render(here::here('scripts','sdmTMB-data-construction-glorys.Rmd'),quiet=TRUE)
+# rmarkdown::render(here::here('scripts','sdmTMB-data-construction-glorys.Rmd'),quiet=TRUE)
+trawl <- read_rds(here('data','trawl_glorys_joined.rds'))
+
+trawl_norm <- trawl %>%  # rescale depth, oxygen, and temp to be N(0,1)
+    mutate(across(c(depth_trawl,thetao,o2),~(scale(.) %>% as.vector()),.names="{.col}_norm"))
 ```
 
 Next, we outline the functions we will use to fit, project, and visualize model outputs.
@@ -33,13 +45,8 @@ Next, we outline the functions we will use to fit, project, and visualize model 
 ```{r}
 prepare_species <- function(dat,spp){
   dat_sub <- dat %>% 
-    filter(species==spp) %>% 
-    
-    # rescale depth, oxygen, and temp to be N(0,1)
-    mutate(across(c(depth_trawl,mean_temp_roms_30,mean_oxygen_roms_30),~(scale(.) %>% as.vector()),.names="{.col}_norm")) %>% 
-    
-    # add a year indicator
-    mutate(year=lubridate::year(date))
+    filter(species==spp)
+  dat_sub
 }
 ```
 
@@ -53,7 +60,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
   modeldat <- prepare_species(dat,spp=spp)
   
   # make spde
-  spde <- make_mesh(modeldat,xy_cols = c('longitude','latitude'), 
+  spde <- make_mesh(modeldat,xy_cols = c('lontrawlUTM','lattrawlUTM'), 
                    cutoff = 20)
   
   # model formula
@@ -67,13 +74,13 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
   if(!include_substrate) substrate=""
   
   # make the environmental effects
-  enviro <- paste("mean_temp_roms_30_norm + 
-                  I(mean_temp_roms_30_norm^2) + 
-                  mean_oxygen_roms_30_norm + 
-                  I(mean_oxygen_roms_30_norm^2)")
+  enviro <- paste("thetao_norm + 
+                  I(thetao_norm^2) + 
+                  o2_norm + 
+                  I(o2_norm^2)")
   # wiggly environmental relationships?
-  enviro <- ifelse(env_spline, paste0("s(mean_temp_roms_30_norm,k=",spline_k,") + ",
-                                      "s(mean_oxygen_roms_30_norm,k=",spline_k,")"),
+  enviro <- ifelse(env_spline, paste0("s(thetao_norm,k=",spline_k,") + ",
+                                      "s(o2_norm,k=",spline_k,")"),
                    enviro)
   # if depth effect, add to model formula
   if(use_depth) {
@@ -116,7 +123,7 @@ run_sdmTMB <- function(dat,spp,use_depth=F,time_vary=F,spatial_field=F,include_s
 ```
 
 ```{r,eval=F}
-m <- run_sdmTMB(dat=trawl_roms_utm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
+m <- run_sdmTMB(dat=trawl_norm,spp="longnose skate",use_depth=T,include_substrate=T) # all other options default
 ```
 
 ## Diagnostic Plots
@@ -126,7 +133,7 @@ Functions to produce QQ plots, spatiotemporal predictions, and spatiotemporal re
 ```{r}
 make_diagnostic_plots <- function(m){
   spp=unique(m$data$species)
-  sppdat <- prepare_species(trawl_roms_utm,spp)
+  sppdat <- prepare_species(trawl_norm,spp)
   resids <- residuals(m)[1:nrow(sppdat),1] %>% as_tibble()
   sppdat$resid=resids$value
   
@@ -137,11 +144,11 @@ make_diagnostic_plots <- function(m){
   # spatial and spatiotemporal predictions
   preds <- predict(m) %>% filter(year %in% unique(sppdat$year)) %>% pull('est')
   sppdat$pred <- preds
-  preds_time_space <- pred_space(sppdat,X='longitude',Y='latitude',time='year') + coord_equal()
-  preds_space <- pred_space(sppdat,X='longitude',Y='latitude',time='year',by_time = F)
+  preds_time_space <- pred_space(sppdat,X='lontrawlUTM',Y='lattrawlUTM',time='year') + coord_equal()
+  preds_space <- pred_space(sppdat,X='lontrawlUTM',Y='lattrawlUTM',time='year',by_time = F)
   
   # spatiotemporal residuals
-  resids_space <- resid_space(sppdat,X='longitude',Y='latitude',time='year') + coord_equal()
+  resids_space <- resid_space(sppdat,X='lontrawlUTM',Y='lattrawlUTM',time='year') + coord_equal()
 
   # make and return the plot
   diagplots <- plot_grid(preds_time_space,resids_space,preds_space,qq,nrow=2,rel_heights = c(1,0.6))
@@ -180,11 +187,11 @@ make_predictions <- function(modelobj,gcm="hadl"){
   
   temperature <- newdata %>% dplyr::select(contains('bt')) %>% 
     set_names('temperature') %>% 
-    mutate(mean_temp_roms_30_norm=(temperature-mean_t)/sd_t)
+    mutate(thetao=(temperature-mean_t)/sd_t)
   
   oxygen <- newdata %>% dplyr::select(contains('oxy')) %>% 
     set_names('oxygen') %>% 
-    mutate(mean_oxygen_roms_30_norm=(oxygen-mean_oxy)/sd_oxy)
+    mutate(o2=(oxygen-mean_oxy)/sd_oxy)
   
   depth_new <- newdata %>% dplyr::select(contains('depth')) %>% 
     set_names('depth') %>% 
@@ -379,12 +386,12 @@ plot_all_env_relationships <- function(m){
   } else hab_relationship=NULL
     
   if(grepl('temp_roms',form)){
-    temp_relationship <- plot_single_env_relationship(m,predvar="mean_temp_roms_30_norm")+
+    temp_relationship <- plot_single_env_relationship(m,predvar="thetao")+
       labs(x="Bottom Temperature")
   } else temp_relationship=NULL
   
-  if(grepl('mean_oxygen_roms_30_norm',form)){
-    oxy_relationship <- plot_single_env_relationship(m,predvar="mean_oxygen_roms_30_norm")+
+  if(grepl('o2',form)){
+    oxy_relationship <- plot_single_env_relationship(m,predvar="o2")+
       labs(x="Bottom Oxygen")
   } else oxy_relationship=NULL
   

@@ -10,6 +10,7 @@ library(tidyverse)
 library(here)
 library(cowplot)
 library(hypervolume)
+library(PNWColors)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(dplyr.summarise.inform=FALSE)
@@ -39,6 +40,7 @@ Here are the functions we will use to calculate the individual metrics, based on
 # import one set of data to start
 bs <- read_rds(here('model output','climate novelty','roms','big skate','projection_3ESMs.rds'))
 ds <- read_rds(here('model output','climate novelty','roms','dover sole','projection_3ESMs.rds'))
+db <- read_rds(here('model output','climate novelty','roms','darkblotched rockfish','projection_3ESMs.rds'))
 ```
 
 ## Species' Hypervolume
@@ -46,9 +48,10 @@ ds <- read_rds(here('model output','climate novelty','roms','dover sole','projec
 The years 1980 to 2010 are used (for now) to establish a historical hypervolume for each species/ESM combination. Choices in this function include the years of predicted/projected data to use for hv calculation, the ESM chosen, and the quantile threshold for indicating presence vs. absence.
 
 ```{r}
-calc_hv <- function(df,esm_name,year_range,est_thresh=0.1,max_sample=1e5){
+calc_hv <- function(df,esm_name,year_range,est_thresh=0.5,max_sample=1e5){
   dfsub <- df %>% 
-    # for now, we use all values greater than the 10% quantile for the species across all years (incl. projected years)
+    # for now, we use all values greater than the 50% quantile for the species across all years (incl. projected years)
+    # keep in mind that many of the low estimates from the SDM are basically zeroes
     filter(est>=quantile(est,est_thresh)) %>% 
     filter(esm==esm_name,year %in% year_range) %>% 
     dplyr::select(contains(esm_name),depth_m) %>% 
@@ -58,7 +61,7 @@ calc_hv <- function(df,esm_name,year_range,est_thresh=0.1,max_sample=1e5){
     dfsub <- dfsub %>% slice_sample(n=max_sample)
   }
   tic("Calculated hypervolume.")
-  hv <- hypervolume(data=dfsub,method='svm')
+  hv <- hypervolume(data=dfsub,method='svm',verbose=FALSE)
   toc()
   return(hv)
 }
@@ -70,5 +73,109 @@ plot(bs_hv,show.3d=TRUE,show.random=F,show.density=T,show.data=T)
 
 ds_hv <- calc_hv(ds,esm_name="ipsl",year_range=1980:2010)
 plot(ds_hv,show.3d=TRUE,show.random=F,show.density=T,show.data=T)
+
+db_hv <- calc_hv(db,esm_name="ipsl",year_range=1980:2010)
+plot(db_hv,show.3d=TRUE,show.random=F,show.density=T,show.data=T)
 ```
+
+```{r}
+#pulling out data to plot/compare
+bs_rp <- bs_hv@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+ds_rp <- ds_hv@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+db_rp <- db_hv@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+
+ggplot()+
+  geom_point(data=bs_rp,aes(o2,depth,color="Big Skate"))+
+  geom_point(data=ds_rp,aes(o2,depth,color="Dover sole"))+
+  geom_point(data=db_rp,aes(o2,depth,color="Darkblotched rockfish"))+
+  labs(x="Oxygen",y="Depth")
+
+ggplot()+
+  geom_point(data=bs_rp,aes(t,depth,color="Big Skate"))+
+  geom_point(data=ds_rp,aes(t,depth,color="Dover sole"))+
+  geom_point(data=db_rp,aes(t,depth,color="Darkblotched rockfish"))+
+  labs(x="Temperature",y="Depth")
+
+ggplot()+
+  geom_point(data=bs_rp,aes(t,o2,color="Big Skate"))+
+  geom_point(data=ds_rp,aes(t,o2,color="Dover sole"))+
+  geom_point(data=db_rp,aes(t,o2,color="Darkblotched rockfish"))+
+  labs(x="Temperature",y="Depth")
+
+```
+What about one species over multiple time periods?
+
+```{r}
+bs_hv <- calc_hv(bs,esm_name="ipsl",year_range=1980:2010)
+bs_hv2 <- calc_hv(bs,esm_name="ipsl",year_range=2050)
+bs_hv3 <- calc_hv(bs,esm_name="ipsl",year_range=2100)
+
+# we can get the background ROMS hypervolume but just using all the data (not filtering for some min density threshold)
+roms_hv_base <- calc_hv(bs,esm='ipsl',year_range=1980:2010,est_thresh=0)
+
+roms_rp_base <- roms_hv_base@RandomPoints %>% as_tibble() %>% set_names(c('t','o2','depth'))
+bs_rp_base <- bs_hv@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+bs_rp_2<- bs_hv2@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+bs_rp_3<- bs_hv3@RandomPoints %>% as_tibble() %>% set_names(c("t","o2","depth"))
+
+ggplot()+
+  geom_point(data=roms_rp_base,aes(t,o2,color="ROMS Base"))+
+  geom_point(data=bs_rp,aes(t,o2,color="1980:2010"))+
+  geom_point(data=bs_rp_2,aes(t,o2,color="2050"))+
+  geom_point(data=bs_rp_3,aes(t,o2,color="2100"))+
+  labs(x="Temperature",y="Oxygen",color="Time Period")+
+  scale_color_manual(values=c(pnw_palette("Shuksan",3),"black"))
+
+ggplot()+
+  geom_point(data=bs_rp,aes(t,depth,color="1980:2010"))+
+  geom_point(data=bs_rp_2,aes(t,depth,color="2050"))+
+  geom_point(data=bs_rp_3,aes(t,depth,color="2100"))+
+  labs(x="Temperature",y="Depth",color="Time Period")+
+  scale_color_manual(values=pnw_palette("Shuksan",3))
+
+ggplot()+
+  geom_point(data=bs_rp,aes(o2,depth,color="1980:2010"))+
+  geom_point(data=bs_rp_2,aes(o2,depth,color="2050"))+
+  geom_point(data=bs_rp_3,aes(o2,depth,color="2100"))+
+  labs(x="Oxygen",y="Depth",color="Time Period")+
+  scale_color_manual(values=pnw_palette("Shuksan",3))
+```
+# Hypervolume Overlap Set
+
+```{r}
+hvset <- hypervolume_set(bs_hv,bs_hv2,check.memory=F)
+# fractional overlap between the two hypervolumes
+# Intersection volume / union volume
+hvset@HVList$Intersection@Volume / hvset@HVList$Union@Volume
+```
+
+
+## Timeseries?
+```{r}
+# Big skate hv timeseries?
+calc_hv_timeseries <- function(df,esm_name){
+  purrr::map_dbl(1980:2100,function(yr){
+    vol <- calc_hv(df,esm_name,year_range = yr)
+    vol@Volume
+  })
+}
+```
+
+```{r,message=F,warning=F}
+bs_gfdl_hv_ts <- calc_hv_timeseries(bs,'gfdl')
+bs_ipsl_hv_ts <- calc_hv_timeseries(bs,'ipsl')
+bs_hadl_hv_ts <- calc_hv_timeseries(bs,'hadl')
+bs_ts <- tibble(yr=1980:2100,gfdl=bs_gfdl_hv_ts,ipsl=bs_ipsl_hv_ts,hadl=bs_hadl_hv_ts) %>% 
+  pivot_longer(gfdl:hadl,names_to="esm",values_to="volume") %>% 
+  arrange(esm,yr) %>% 
+  group_by(esm) %>% 
+  mutate(lag1=lag(volume,1),lag2=lag(volume,2),lag3=lag(volume,3)) %>% 
+  mutate(smoothvol=(volume+lag1+lag2+lag3)/4) %>% 
+  ggplot(aes(yr,smoothvol,color=esm))+
+  geom_line()+
+  geom_hline(yintercept=bs_hv@Volume)
+bs_ts
+```
+
+
 

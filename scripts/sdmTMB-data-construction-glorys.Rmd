@@ -7,11 +7,13 @@ date: "2023-10-11"
 ```{r setup, include=FALSE}
 # remotes::install_github("pbs-assess/sdmTMB",ref="stacking")
 library(sdmTMB)
+library(nwfscSurvey)
 library(tidyverse)
 library(lubridate)
 library(sf)
 library(here)
 library(rnaturalearth)
+library(viridis)
 library(cowplot)
 library(RANN)
 library(tictoc)
@@ -76,8 +78,8 @@ copernicus_product_details(product       = "GLOBAL_MULTIYEAR_PHY_001_030",
                            variable = "thetao")
 
 copernicus_download_motu(
-  username = "oliu",
-  password = "@Peng4ott2Eagles17",
+  username = "",
+  password = "",
   destination   = paste0(out_dir,'/GLORYS-Monthly-2003-2020_thetao.nc'),
   product       = "GLOBAL_MULTIYEAR_PHY_001_030",
   layer         = "cmems_mod_glo_phy_my_0.083_P1M-m",
@@ -127,7 +129,7 @@ glorys_phy_bot <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.n
   ungroup()
 
 # visualize
-glorys_phy_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()
+glorys_phy_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()+coord_equal()
 glorys_phy_bot %>% filter(longitude>-130) %>% ggplot(aes(bot))+geom_density()
 
 # for the BGC model
@@ -139,7 +141,7 @@ glorys_bgc_bot <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_o2.nc'))
   ungroup()
 
 # visualize
-glorys_bgc_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()
+glorys_bgc_bot %>% filter(longitude>-130) %>% ggplot(aes(longitude,latitude,color=bot))+geom_point()+coord_equal()
 glorys_bgc_bot %>% filter(longitude>-130) %>% ggplot(aes(bot))+geom_density()
 
 ```
@@ -164,6 +166,48 @@ glorys_bgc_grid <- glorys_bgc_bot %>%
   st_set_geometry(NULL)
 ```
 
+# Build Trawl Data
+
+Using package `nwfscSurvey`, download and organize WCBTS data for species of interest
+
+```{r, eval=F}
+# species
+# species list
+# spp.list <- list.files(here('model output','climate novelty','roms'))
+available_spp <- PullSpp.fn()
+# match
+# fill in missing cells if we can. problem species are Dover sole, english sole, pacific grenadier, pacific ocean perch, pacifific sanddab, pacific spiny dogfish
+# corrections <- c("Dover sole","English sole","Pacific grenadier","Pacific ocean perch","Pacific sanddab","Pacific spiny dogfish")
+
+spp.list <- c("arrowtooth flounder","aurora rockfish","big skate","bocaccio","canary rockfish","chilipepper","curlfin sole","darkblotched rockfish","Dover sole","English sole","greenstriped rockfish","lingcod","longnose skate","longspine thornyhead","Pacific grenadier","Pacific ocean perch","Pacific sanddab","Pacific spiny dogfish","petrale sole","rex sole","sablefish","sharpchin rockfish","shortbelly rockfish","shortraker rockfish","shortspine thornyhead","slender sole","splitnose rockfish","spotted ratfish","stripetail rockfish","widow rockfish","yelloweye rockfish","yellowtail rockfish")
+
+# make sure these match to records in the survey list
+spp_trawl_match <- tibble(lower=spp.list) %>% 
+  left_join(available_spp,by=c("lower"="common"))
+
+# pull the data
+trawl <- PullCatch.fn(Name=spp.list,YearRange=c(2003,2020),SurveyName = "NWFSC.Combo")
+# organize and rename some variables
+trawl <- trawl %>% 
+  # convert date from character to date
+  mutate(date=as_date(Date),
+         Trawl_id=as.numeric(Trawl_id)) %>% 
+  # clean up some other columns to be consistent
+  mutate(species=tolower(Common_name)) %>% 
+  rename(year=Year,depth_trawl=Depth_m,area_swept_ha=Area_Swept_ha)
+
+# save raw
+write_rds(trawl,here('data','nwfsc_trawl_data_Nov2023.rds'))
+```
+# Substrate Data
+
+```{r}
+substrate <- read_rds(here('data','substrate','substrate_by_trawlID.rds'))
+substrate_thin <- substrate %>% 
+  dplyr::select(TRAWL_ID,prop_hard_mixed)
+```
+
+
 # Spatial Matching
 
 We need to join trawl locations to their nearest GLORYS grid cell
@@ -172,20 +216,18 @@ We need to join trawl locations to their nearest GLORYS grid cell
 
 Import trawl data
 ```{r}
-trawl <- read_rds(here('data','nwfsc_trawl_data.rds')) %>% 
-  # convert date from character to date
-  mutate(date=as_date(date))
+trawl <- read_rds(here('data','nwfsc_trawl_data_Nov2023.rds'))
 ```
 
 Get locations
 
 ```{r}
 trawl_locs <- trawl %>% 
-  distinct(longitude_dd,latitude_dd,.keep_all = T) %>% 
+  distinct(Longitude_dd,Latitude_dd,.keep_all = T) %>% 
   # select the variable we'll use to match
-  dplyr::select(date,longitude_dd,latitude_dd,depth_trawl=depth) %>% 
+  dplyr::select(date,Longitude_dd,Latitude_dd,depth_trawl) %>% 
   # convert to UTM10
-  st_as_sf(coords=c('longitude_dd','latitude_dd'),crs=4326,remove = F) %>%  
+  st_as_sf(coords=c('Longitude_dd','Latitude_dd'),crs=4326,remove = F) %>%  
   st_transform(crs = "+proj=utm +zone=10 +datum=WGS84 +units=km") %>%
   mutate(lontrawlUTM=st_coordinates(.)[,1],lattrawlUTM=st_coordinates(.)[,2])%>% 
   st_set_geometry(NULL)
@@ -197,7 +239,8 @@ Here are the datasets we are trying to match
 ```{r}
 ggplot()+
   geom_point(data=glorys_phy_grid %>% filter(lonUTM>200),aes(lonUTM,latUTM,color=bot))+
-  geom_point(data=trawl_locs,aes(lontrawlUTM,lattrawlUTM),color='red',size=0.5)
+  geom_point(data=trawl_locs,aes(lontrawlUTM,lattrawlUTM),color='red',size=0.5)+
+  coord_equal()
 ```
 
 Find nearest neighbor matches between trawl and GLORYS
@@ -222,12 +265,23 @@ trawl_glorys_match <- trawl_locs %>%
 
 # Join to Trawl Data
 
-## Import Trawl Data
+## Match to Substrate
+
 ```{r}
 trawl <- trawl %>% 
-  left_join(trawl_glorys_match,by=c("date"="date","longitude_dd","latitude_dd")) %>% 
+  # Join substrate by just trawl ID number
+  left_join(substrate_thin,by=c("Trawl_id"="TRAWL_ID")) %>% 
+  left_join(trawl_glorys_match,by=c("date"="date","Longitude_dd","Latitude_dd","depth_trawl")) %>% 
   # thin columns to just the ones we (may) need for SDMs
-  dplyr::select(date,year,species,scientific_name,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl=depth,area_swept_ha,glorys_match_bgc,glorys_match_phy)
+  dplyr::select(date,year,species,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl,area_swept_ha,glorys_match_bgc,glorys_match_phy,prop_hard_mixed)
+
+# check
+trawl %>%
+  filter(year%in%c(2003:2005)) %>% 
+  ggplot(aes(lontrawlUTM,lattrawlUTM,color=prop_hard_mixed))+
+  geom_point(size=0.5)+
+  coord_equal()+
+  scale_color_viridis()
 ```
 
 ## Join
@@ -245,9 +299,7 @@ glorys_times <- tidync(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc'
 glimpse(glorys_times)
 range(glorys_times$year)
 # ncdf4::nc_open(here('data','GLORYS','GLORYS-Monthly-2003-2020_thetao.nc'))
-
 ```
-
 
 Short function to join one year of data at a time (so the import from the .nc file isn't too onerous)
 ```{r}
@@ -293,8 +345,8 @@ join_glorys_trawl <- function(yr){
   
   # clean up columns and finish
   out <- trawl_glorys_yr %>% 
-    dplyr::select(date_trawl=date,year,species,scientific_name,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl,glorys_dttm,
-                  depth_glorys=depth,glorys_time=time,longlorysUTM=lonUTM,latglorysUTM=latUTM,thetao,o2)
+    dplyr::select(date_trawl=date,year,species,cpue_kg_km2,lattrawlUTM,lontrawlUTM,depth_trawl,glorys_dttm,
+                  depth_glorys=depth,glorys_time=time,longlorysUTM=lonUTM,latglorysUTM=latUTM,prop_hard_mixed,thetao,o2)
   out
 }
 ```
@@ -326,11 +378,11 @@ depth_trawl_vs_glorys_diff
 Do the join for all years
 
 ```{r}
-trawl_glorys_joined <- purrr::map_df(2003:2017,join_glorys_trawl)
+trawl_glorys_joined <- purrr::map_df(2003:2020,join_glorys_trawl)
 # for some reason this didn't run with all years at once (maybe memory hole), so just row bind
-trawl_glorys_2018 <- join_glorys_trawl(2018)
-trawl_glorys_joined <- trawl_glorys_joined %>% 
-  bind_rows(trawl_glorys_2018)
+# trawl_glorys_2018 <- join_glorys_trawl(2018)
+# trawl_glorys_joined <- trawl_glorys_joined %>% 
+#   bind_rows(trawl_glorys_2018)
 ```
 
 ## Save
